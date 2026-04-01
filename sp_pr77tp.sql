@@ -1,0 +1,473 @@
+-- Cumulos por Ubicacion  - Produccion
+-- Creado    : 13/09/2017 - Modificado: Henry Giron copia de temp sp_pro77 .... Prima Suscritas
+-- SIS v.2.0 - d_prod_sp_cob77_dw1 - DEIVID, S.A.
+drop procedure sp_pr77tp;
+create procedure "informix".sp_pr77tp(a_compania char(03), a_terremoto smallint, a_fecha date) 
+Returning integer, char(50);
+
+define v_filtros			varchar(255);
+define v_ubicacion			varchar(50);
+define v_compania_nombre	varchar(50);
+define v_nodocumento		char(20);
+define _no_poliza			char(10);
+define _periodo				char(7);
+define _no_unidad			char(5);
+define _mal_porc			char(5);
+define _no_endoso			char(5);
+define _ano_contable		char(4);
+define _cod_ubica			char(3);
+define _mes_contable		char(2);
+define _documento	     	char(20);
+define _porc_partic_suma	dec(9,6);
+define _porcentaje			dec(9,6);
+define _suma_facultativo	dec(16,2);
+define v_suma_asegurada		dec(16,2);
+define _suma_excedente		dec(16,2);
+define _suma_retencion		dec(16,2);
+define v_facultativo		dec(16,2);
+define v_retencion			dec(16,2);
+define v_excedente			dec(16,2);
+define v_prima				dec(16,2);
+define _prima				dec(16,2);
+define _suma				dec(16,2);
+define v_cnt_poliza			integer; 
+define _cant_ret			integer;
+define _cant_fac			integer;
+define _cant_exe			integer;
+define _tipo_contrato		smallint;
+define _es_terremoto		smallint;
+define _no_cambio			smallint;
+define _orden				smallint;
+define _fecha_cancelacion	date;
+define _fecha_emision		date;
+define _cant_pol			smallint;
+define _error_desc			CHAR(50);
+define _error_isam			integer;
+define _error				integer;
+define _tipo_incendio       smallint;
+DEFINE _cod_ramo, _cod_subramo CHAR(3);
+
+--set debug file to "\\nemesis\ancon\store procedures\debug\sp_cob03c.trc";
+drop table if exists temp_ubica;
+  
+create temp table temp_ubica(
+cod_ubica			char(3),
+no_poliza			char(10),
+no_documento		char(20),
+cantidad			integer,
+suma_asegurada		dec(16,2),
+mal_porc			char(5),
+retencion			dec(16,2),
+cant_ret			integer,
+primer_excedente	dec(16,2),
+cant_exe			integer,
+facultativo			dec(16,2),
+cant_fac			integer,
+prima_terremoto		dec(16,2),
+tipo_incendio       smallint,	
+orden				smallint,
+no_unidad           char(5),   		  
+cod_ramo            CHAR(3),
+cod_subramo         CHAR(3),
+primary key (no_poliza,no_unidad)) with no log;
+
+--set debug file to "sp_pro77.trc";
+--trace on;
+
+-- nombre de la compania
+SET ISOLATION TO DIRTY READ;
+
+--set debug file to "sp_pro77tp.trc";
+--trace on;
+begin 
+on exception set _error,_error_isam,_error_desc	
+	return _error,_error_desc;
+end exception 
+
+let  v_compania_nombre = sp_sis01(a_compania); 
+let _documento = '';
+let _ano_contable = year(a_fecha);
+
+{if month(a_fecha) < 10 then
+	let _mes_contable = '0' || month(a_fecha);
+else
+	let _mes_contable = month(a_fecha);
+end if
+
+let _periodo = _ano_contable || '-' || _mes_contable;}
+
+let _periodo = sp_sis39(a_fecha);
+
+foreach
+	select d.no_poliza,
+		   e.no_endoso,
+		   d.no_documento,
+		   d.fecha_cancelacion,d.cod_ramo, d.cod_subramo
+	  into _no_poliza,
+		   _no_endoso,
+		   v_nodocumento, 
+		   _fecha_cancelacion,_cod_ramo, _cod_subramo
+	  from emipomae d, endedmae e
+	 where e.no_poliza = d.no_poliza
+	   and d.cod_compania = a_compania
+	   and d.cod_ramo in ('001','003')
+	   and (d.vigencia_final >= a_fecha or d.vigencia_final is null)
+	   and d.fecha_suscripcion <= a_fecha
+	   and e.fecha_emision <= a_fecha
+	   and d.vigencia_inic < a_fecha
+	   and e.periodo <= _periodo
+	   and d.actualizado = 1
+	   and e.actualizado = 1
+--	  and d.no_poliza = '576237'
+
+	let _fecha_emision = null;
+
+	if _fecha_cancelacion <= a_fecha then
+		foreach
+			select fecha_emision
+			  into _fecha_emision
+			  from endedmae
+			 where no_poliza = _no_poliza
+			   and cod_endomov = '002'
+			   and vigencia_inic = _fecha_cancelacion
+		end foreach
+
+		if  _fecha_emision <= a_fecha then
+			continue foreach;
+		end if
+	end if
+
+	let _cant_ret = 0;
+	let _cant_exe = 0;
+	let _cant_fac = 0;
+	let _mal_porc = '';
+	let _cant_pol = 1;
+		 
+FOREACH
+		SELECT no_unidad
+		  INTO _no_unidad
+		  FROM endeduni 
+		 WHERE no_poliza = _no_poliza
+		   and no_endoso = _no_endoso		 	             
+
+	if a_terremoto = 1 then
+		foreach
+			select cod_ubica, 
+				   no_unidad,
+				   suma_terremoto, 
+				   prima_terremoto 
+			  into _cod_ubica,
+				   _no_unidad, 
+				   _suma, 
+				   _prima 
+			  from endcuend
+			 where no_poliza = _no_poliza
+			   and no_endoso = _no_endoso
+			   and no_unidad = _no_unidad
+			   
+				LET _tipo_incendio = 0;						
+				
+			FOREACH
+				SELECT tipo_incendio 
+				  INTO _tipo_incendio 
+				  FROM emipouni 
+				 WHERE no_poliza = _no_poliza 
+				   and no_unidad = _no_unidad 
+				exit foreach; 
+			end foreach 
+
+			if _tipo_incendio = 0 or _tipo_incendio is null then
+				
+				FOREACH
+					SELECT tipo_incendio
+					  INTO _tipo_incendio
+					  FROM endeduni
+					 WHERE no_poliza = _no_poliza
+					   AND no_endoso = _no_endoso
+					   and no_unidad = _no_unidad
+					exit foreach;
+				end foreach	  			
+				
+				if  _tipo_incendio is null then
+					let _tipo_incendio = 0;
+				end if
+			end if					   
+
+			let _suma_facultativo = 0; 
+			let _suma_retencion   = 0;
+			let _suma_excedente   = 0;
+			let _es_terremoto     = 0;
+			let _porcentaje       = 0;
+
+			foreach
+				select no_cambio
+				  into _no_cambio
+				  from emireama
+				 where no_poliza = _no_poliza
+				   and no_unidad = _no_unidad
+				   and vigencia_inic   <= a_fecha
+				   and (vigencia_final >= a_fecha or vigencia_final is null)
+				 order by no_cambio desc
+				exit foreach;
+			end foreach
+
+			foreach
+				select x.porc_partic_suma,
+					   y.tipo_contrato,
+					   z.es_terremoto
+				  into _porc_partic_suma,
+					   _tipo_contrato,
+					   _es_terremoto
+				  from emireaco x, reacomae y, reacobre z
+				 where x.no_poliza = _no_poliza
+				   and x.no_unidad = _no_unidad
+				   and x.no_cambio = _no_cambio
+				   and y.cod_contrato = x.cod_contrato
+				   and z.cod_cober_reas = x.cod_cober_reas
+				   and z.es_terremoto = 1
+
+				if _tipo_contrato = 1 then
+					let _suma_retencion = _suma * _porc_partic_suma / 100;
+					let _cant_ret = 1;
+				elif _tipo_contrato = 3 then
+					let _suma_facultativo = _suma * _porc_partic_suma / 100;
+					let _cant_fac = 1;
+				else
+					let _suma_excedente = _suma * _porc_partic_suma / 100;
+					let _cant_exe = 1;
+				end if
+
+				let _porcentaje =  _porcentaje + _porc_partic_suma;
+
+				if _porcentaje > 100.5 or _porcentaje < 99.5 then
+				   let _mal_porc = _no_unidad;
+				else
+				   let _mal_porc = '';
+				end if
+			end foreach
+			
+		{	select count(*) 
+			  into _cant_pol 
+			  from temp_ubica 
+			  where no_poliza = _no_poliza;
+			  
+			  if _cant_pol is null or _cant_pol = 0 then
+				 let _cant_pol = 1;
+				 let _cant_ret = _cant_ret;
+				 let _cant_fac = _cant_fac;
+				 let _cant_exe = _cant_exe;
+			else
+				 let _cant_pol = 0;
+				 let _cant_ret = 0;
+				 let _cant_fac = 0;
+				 let _cant_exe = 0;				 
+			 end if	}				
+
+			if _es_terremoto = 1 then
+
+				let _orden = sp_sis184(_cod_ubica);	  --sacar el orden para el reporte
+
+				begin
+					on exception in(-239)
+						update temp_ubica			   
+						   set suma_asegurada   = suma_asegurada + _suma,
+							   mal_porc         = _mal_porc,
+							   retencion        = retencion + _suma_retencion,
+							   cant_ret			= _cant_ret,
+							   primer_excedente = primer_excedente + _suma_excedente,
+							   cant_exe			= _cant_exe,
+							   facultativo      = facultativo + _suma_facultativo,
+							   cant_fac			= _cant_fac,
+							   prima_terremoto  = prima_terremoto + _prima									   
+						 where no_poliza = _no_poliza
+						   and no_unidad = _no_unidad;
+					end exception
+
+
+					insert into temp_ubica
+					   values(_cod_ubica,
+							  _no_poliza,
+							  v_nodocumento,
+							  _cant_pol, --1,
+							  _suma,  
+							  _mal_porc,
+							  _suma_retencion,
+							  _cant_ret,
+							  _suma_excedente,
+							  _cant_exe,
+							  _suma_facultativo,
+							  _cant_fac,
+							  _prima,
+							  _tipo_incendio,
+							  _orden,
+							  _no_unidad,
+							  _cod_ramo, 
+							  _cod_subramo);
+				end
+			end if 
+		end foreach
+	else -- No es Terremoto
+		foreach
+			select cod_ubica, 
+				   no_unidad,
+				   suma_incendio, 
+				   prima_incendio 
+			  into _cod_ubica,
+				   _no_unidad,
+				   _suma,
+				   _prima 
+			  from endcuend
+			 where no_poliza = _no_poliza
+			   and no_endoso = _no_endoso
+			   and no_unidad = _no_unidad
+			   
+				LET _tipo_incendio = 0;						
+				
+			FOREACH
+				SELECT tipo_incendio
+				  INTO _tipo_incendio
+				  FROM emipouni
+				 WHERE no_poliza = _no_poliza
+				   and no_unidad = _no_unidad
+				exit foreach;
+			end foreach	  
+
+			if _tipo_incendio = 0 or  _tipo_incendio is null then
+				
+				FOREACH
+					SELECT tipo_incendio
+					  INTO _tipo_incendio
+					  FROM endeduni
+					 WHERE no_poliza = _no_poliza
+					   AND no_endoso = _no_endoso
+					   and no_unidad = _no_unidad
+					exit foreach;
+				end foreach	  			
+				
+				if  _tipo_incendio is null then
+					let _tipo_incendio = 0;
+				end if
+			end if					   
+
+			let _suma_facultativo = 0; 
+			let _suma_retencion = 0;
+			let _suma_excedente = 0;
+			let _es_terremoto = 1;
+			let _porcentaje = 0;
+
+			foreach
+				select no_cambio
+				  into _no_cambio
+				  from emireama
+				 where no_poliza = _no_poliza
+				   and no_unidad = _no_unidad
+				   and vigencia_inic <= a_fecha
+				   and (vigencia_final >= a_fecha or vigencia_final is null)
+				 order by no_cambio desc
+				exit foreach;
+			end foreach
+
+			foreach
+				select x.porc_partic_suma,
+					   y.tipo_contrato,
+					   z.es_terremoto
+				  into _porc_partic_suma,
+					   _tipo_contrato,
+					   _es_terremoto
+				  from emireaco x, reacomae y, reacobre z
+				 where y.cod_contrato = x.cod_contrato
+				   and x.no_poliza = _no_poliza
+				   and x.no_unidad = _no_unidad
+				   and x.no_cambio = _no_cambio
+				   and z.cod_cober_reas = x.cod_cober_reas
+				   and z.es_terremoto = 0
+
+				if _tipo_contrato = 1 then
+					let _suma_retencion = _suma * _porc_partic_suma / 100;
+					let _cant_ret = 1;
+				elif _tipo_contrato = 3 then
+					let _suma_facultativo = _suma * _porc_partic_suma / 100;
+					let _cant_fac = 1;
+				else
+					let _suma_excedente = _suma * _porc_partic_suma / 100;
+					let _cant_exe = 1;
+				end if
+
+				let _porcentaje =  _porcentaje + _porc_partic_suma;
+
+				if _porcentaje > 100.5 or _porcentaje < 99.5 then
+				   let _mal_porc = _no_unidad;
+				else
+				   let _mal_porc = '';
+				end if
+			end foreach
+			
+			{select count(*) 
+			  into _cant_pol 
+			  from temp_ubica 
+			  where no_poliza = _no_poliza;
+			  
+			  if _cant_pol is null or _cant_pol = 0 then
+				 let _cant_pol = 1;
+				 let _cant_ret = _cant_ret;
+				 let _cant_fac = _cant_fac;
+				 let _cant_exe = _cant_exe;
+			else
+				 let _cant_pol = 0;
+				 let _cant_ret = 0;
+				 let _cant_fac = 0;
+				 let _cant_exe = 0;				 
+			 end if					}
+
+			if _es_terremoto = 0 then
+
+				let _orden = sp_sis184(_cod_ubica);	  --sacar el orden para el reporte
+				
+				begin
+					on exception in(-239)
+						update temp_ubica			   
+						   set suma_asegurada   = suma_asegurada + _suma,
+							   mal_porc         = _mal_porc,
+							   retencion        = retencion + _suma_retencion,
+							   cant_ret			= _cant_ret,
+							   primer_excedente = primer_excedente + _suma_excedente,
+							   cant_exe			= _cant_exe,
+							   facultativo      = facultativo + _suma_facultativo,
+							   cant_fac			= _cant_fac,
+							   prima_terremoto  = prima_terremoto + _prima
+						 where no_poliza = _no_poliza
+						   and no_unidad = _no_unidad;						 
+					end exception					
+					
+					insert into temp_ubica
+					values(	_cod_ubica,
+							_no_poliza,
+							v_nodocumento,
+							_cant_pol, --1,
+							_suma,  
+							_mal_porc,
+							_suma_retencion,
+							_cant_ret,
+							_suma_excedente,
+							_cant_exe,
+							_suma_facultativo,
+							_cant_fac,
+							_prima,
+							_tipo_incendio,
+							_orden,
+							_no_unidad,
+							_cod_ramo, 
+							_cod_subramo);
+				end
+			end if
+		end foreach
+	end if 
+end foreach
+end foreach
+
+
+return 0, 'Tabla temporal exitosa ';
+end
+
+end procedure;
+

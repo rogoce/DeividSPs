@@ -1,0 +1,177 @@
+--Reporte para el Cuadre de las cuentas de Reaseguro Cedido
+--Creado    : 28/12/2015 - Autor: Román Gordón
+
+drop procedure sp_rea28;
+create procedure "informix".sp_rea28(
+a_compania		char(03),
+a_agencia		char(03),
+a_periodo1		char(07),
+a_periodo2		char(07),
+a_nivel			smallint,
+a_db			char(18))
+returning	varchar(50)	as compania,
+			varchar(50)	as nom_cuenta,
+			char(18)	as cuenta,			
+			char(3)		as cod_ramo,
+			varchar(50)	as nom_ramo,
+			dec(16,2)	as monto_tecnico,
+			dec(16,2)	as saldo,
+			dec(16,2)	as diferencia;
+
+begin
+
+define v_filtros			varchar(255);
+define _nom_cuenta			varchar(50);
+define v_desc_ramo			varchar(50);
+define v_descr_cia			varchar(50);
+define _cuenta				char(18);
+define _no_poliza			char(10);
+define _ano					char(4);
+define _cod_grupo			char(3);
+define _cod_ramo			char(3);
+define v_prima_suscrita		dec(16,2);
+define _monto_total			dec(16,2);
+define _diferencia			dec(16,2);
+define _saldo				dec(16,2);
+define _ramo_sis			smallint;
+define _mes					smallint;
+
+set isolation to dirty read;
+
+let v_prima_suscrita  = 0;
+let _monto_total      = 0;
+
+let v_descr_cia = sp_sis01(a_compania);
+
+drop table if exists tmp_balance;
+drop table if exists tmp_saldos;
+drop table if exists temp_det;
+
+--Tabla Maestra del Procedimiento
+create temp table tmp_balance(
+cuenta		char(12),
+cod_ramo	char(3)   not null,
+monto_total	dec(16,2) not null,
+saldo		dec(16,2),
+diferencia	dec(16,2),
+primary key (cuenta,cod_ramo)) with no log;
+
+--Tabla para el proceso de saldos por cuenta.
+create temp table tmp_saldos(
+cuenta		char(12),
+nombre		char(50),
+debito		dec(16,2),
+credito		dec(16,2),
+saldo		dec(16,2),
+saldo_ant	dec(16,2),
+saldo_act	dec(16,2),
+referencia	char(20)) with no log;
+
+let _ano = a_periodo1[1,4];
+let _mes = a_periodo1[6,7];
+
+execute procedure sp_sac42(_ano, _mes, a_nivel, a_db);
+
+--Procedure de Generación de Primas Suscrita para el periodo dado.
+call sp_pro991('001','001',a_periodo1,a_periodo2,'*','*','*','*','*','*','1','*','*')
+returning v_filtros;
+
+foreach with hold
+	select cod_ramo,
+		   prima,
+		   no_poliza		   
+	  into _cod_ramo,
+		   v_prima_suscrita,
+		   _no_poliza
+	  from temp_det
+	 where seleccionado = 1
+	 order by cod_ramo,no_factura
+
+	select cod_grupo
+	  into _cod_grupo
+	  from cglrepgrupo
+	 where cod_ramo = _cod_ramo;
+
+	if _cod_grupo is null then
+		let _cod_grupo = '';
+	end if
+
+	if _cod_grupo <> '' then
+		let _cod_ramo = _cod_grupo;
+	end if
+	
+	let _cuenta = sp_sis15('PIPSSD', '01', _no_poliza);
+
+	select saldo
+	  into _saldo
+	  from tmp_saldos
+	 where cuenta = _cuenta;
+
+	if _saldo is null then
+		let _saldo = 0.00;
+	end if
+
+	begin
+		on exception in(-239,-268)
+			update tmp_balance
+			   set monto_total = monto_total + v_prima_suscrita,
+				   diferencia = diferencia + v_prima_suscrita
+			 where trim(cuenta) = _cuenta
+			   and cod_ramo = _cod_ramo;
+
+		end exception
+		insert into tmp_balance(
+				cuenta,
+				cod_ramo,
+				monto_total,
+				saldo,
+				diferencia)
+		values(	_cuenta,
+				_cod_ramo,
+				v_prima_suscrita,
+				_saldo,
+				_saldo + v_prima_suscrita);
+	end
+end foreach
+
+foreach
+	select cuenta,
+		   cod_ramo,
+		   monto_total,
+		   saldo,
+		   diferencia
+	  into _cuenta,
+		   _cod_ramo,
+		   _monto_total,
+		   _saldo,
+		   _diferencia
+	  from tmp_balance
+
+	if _cod_ramo <> '099' then
+		select nombre
+		  into v_desc_ramo
+		  from prdramo
+		 where cod_ramo = _cod_ramo;
+	else
+		let v_desc_ramo = 'RAMOS TECNICOS';
+	end if
+
+	select nombre
+	  into _nom_cuenta
+	  from tmp_saldos
+	 where cuenta = _cuenta;
+
+	return	v_descr_cia,
+			_nom_cuenta,
+			_cuenta,
+			_cod_ramo,
+			v_desc_ramo,
+			_monto_total,
+			_saldo,
+			_diferencia with resume;
+end foreach
+
+drop table if exists temp_det;
+end
+
+end procedure;

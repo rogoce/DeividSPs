@@ -1,0 +1,417 @@
+--- Renovacion Automatica. Proceso de excepciones
+--- Creado 02/03/2009 por Armando Moreno
+
+drop procedure sp_pro316b;
+
+create procedure "informix".sp_pro316b(a_poliza char(10))
+returning integer;
+
+begin
+
+define v_documento  	char(20);
+define v_factura    	char(10);
+define v_renovar    	smallint;
+define v_cod_renovar 	smallint;
+define v_cod_no_renovar char(3);
+define _cod_ramo        char(3);
+define _no_poliza       char(10);
+define v_vigencia_inic  date;
+define _vig_inic_ult    date;
+define v_vigencia_fin   date;
+define v_tipo       	char(3);
+define v_saldo      	decimal(16,2);
+define v_cant       	smallint;
+define v_cantidad   	smallint;
+define v_incurrido  	decimal(16,2);
+define v_pagos      	decimal(16,2);
+define v_tot_pagos  	decimal(16,2);
+define _suma_asegurada	decimal(16,2);
+define _perd_total  	smallint;
+define _todas_perdida  	smallint;
+define _cod_compania   	char(3);
+define _codigo_agencia	char(3);
+define _cod_sucursal   	char(3);
+define _centro_costo   	char(3);
+define _usuario      	char(8);
+define _cnt			  	smallint;
+define _cantidad	  	smallint;
+define _cod_agente      char(5);
+define _porc_partic  	decimal(5,2);
+define _vig_final		date;
+define _cod_tipoprod    char(3);
+define _cod_grupo       char(5);
+define _salir           smallint;
+define _cod_subramo     char(3);
+define _fecha           date;
+define _cod_manzana     char(15);
+define _cod_asegurado   char(10);
+define _fecha_aniversario date;
+define _edad            integer;
+define _no_unidad       char(5);
+define _activo          smallint;
+define _cod_acreedor    char(5);
+define _ano_auto        smallint;
+define _cod_cobertura   char(5);
+define _estatus         smallint;
+define _prima_bruta     decimal(16,2);
+define _diezporc	    decimal(16,2);
+define _saldo           decimal(16,2);
+define _renglon         smallint;
+define _reg             integer;
+define _error           smallint;
+define _usu_cob         char(8);
+define _porcentaje      integer;
+define _declarativa     smallint;
+define _gerarquia       smallint;
+define _cod_formapag    char(3);
+define _tipo_forma      smallint;
+define _bandera         smallint;
+define _usu_cob_f       char(8);
+define _tipo_agente     char(1);
+define _renueva         smallint;
+define _sis_renglon		smallint;
+define _bander          smallint;
+define _cod_contr       char(10);
+define _ano				smallint;
+define _mes				smallint;
+define _mes_char		char(2);
+define _fecha_aa        date;
+define _no_pagos        smallint;
+define _flag_moro       smallint;
+DEFINE v_por_vencer     DEC(16,2);
+DEFINE v_exigible       DEC(16,2);
+DEFINE v_corriente      DEC(16,2);
+DEFINE v_monto_30       DEC(16,2);
+DEFINE v_monto_60       DEC(16,2);
+define v_monto_90       DEC(16,2);
+define _tipo            smallint;
+
+
+--SET DEBUG FILE TO "sp_pro316.trc"; 
+--TRACE ON;                                                                
+
+let _error = sp_pro317();
+
+set isolation to dirty read;
+
+let _fecha           = current;
+let v_pagos          = 0;
+let v_incurrido      = 0;
+let v_cantidad       = 0;
+let v_saldo          = 0;
+let v_renovar        = 0;
+let v_cod_renovar    = 0;
+let _salir 			 = 0;
+let v_factura        = NULL;
+let v_cod_no_renovar = NULL;
+let _prima_bruta     = 0;
+let _ano_auto        = 0;
+let _porcentaje      = 10;
+let _bandera         = 0;
+let _renueva         = 1;
+let _sis_renglon     = 12;
+let _bander          = 0;
+let _flag_moro       = 0;
+
+let _ano = year(_fecha);
+let _mes = month(_fecha);
+if _mes < 10 then
+	let _mes_char = "0" || _mes;
+else
+    let _mes_char = _mes;
+end if
+
+select no_documento, 
+	   no_factura,
+       renovada, 
+       no_renovar, 
+       cod_no_renov,
+       vigencia_inic, 
+       vigencia_final, 
+       saldo,
+	   cod_compania,
+	   cod_sucursal,
+	   cod_ramo,
+	   cod_tipoprod,
+	   cod_grupo,
+	   cod_subramo,
+	   suma_asegurada,
+	   prima_bruta,
+	   declarativa
+  into v_documento, 
+ 	   v_factura, 
+ 	   v_renovar, 
+ 	   v_cod_renovar,
+       v_cod_no_renovar, 
+       v_vigencia_inic, 
+       v_vigencia_fin, 
+       v_saldo,
+	   _cod_compania,
+	   _cod_sucursal,
+	   _cod_ramo,
+	   _cod_tipoprod,
+	   _cod_grupo,
+	   _cod_subramo,
+	   _suma_asegurada,
+	   _prima_bruta,
+	   _declarativa
+  from emipomae
+ where no_poliza = a_poliza;
+
+select centro_costo
+  into _centro_costo
+  from insagen
+ where codigo_agencia  = _cod_sucursal
+   and codigo_compania = _cod_compania;
+
+
+  --Polizas con Reclamos
+  let v_cantidad = 0;
+
+  select count(*) 
+    into v_cantidad 
+    from recrcmae
+   where actualizado = 1
+     and cod_evento  = '016'
+     and no_poliza   = a_poliza
+     and estatus_audiencia not in(1,0,7,8);
+
+  if v_cantidad > 0 then
+
+	if _cod_ramo in('002') then --AUTO
+
+		let _bandera = sp_pro316c(a_poliza);
+		if _bandera = 1 then
+
+			let _no_unidad = null;
+			let _bandera = 0;
+
+			foreach
+				select no_unidad
+				  into _no_unidad
+				  from recrcmae
+				 where actualizado = 1
+				   and cod_evento  = '016'
+				   and no_poliza   = a_poliza
+				   and estatus_audiencia not in(1,0,7,8)
+
+				 let _tipo = sp_proe75(a_poliza, _no_unidad);
+				 if _tipo in(1,2,3) then
+					let _bandera = 1;
+					exit foreach;
+				 end if
+			end foreach
+
+			if _bandera = 1 and _no_unidad is not null then
+		  		let _usuario = sp_pro322(_centro_costo,'1',30);
+		  		let _gerarquia = sp_pro327(_centro_costo,'1',30,_usuario);
+				INSERT INTO tmp_reaut(usuario,no_poliza,renglon,tipo_ramo,gerarquia) VALUES (_usuario,a_poliza,30,'1',_gerarquia);
+			end if
+	    end if
+	end if
+  else
+	drop table tmp_reaut;
+	return 0;
+
+  end if
+
+
+ --*****************************************************************************************
+ --Pasar del Pool Manual al Pool de Excepciones, por que tiene reclamo del evento colision *
+ --*****************************************************************************************
+  select count(*)
+   into v_cantidad
+   from tmp_reaut
+  where no_poliza = a_poliza;
+
+  if v_cantidad > 0 then
+
+		select count(*)
+		  into _cantidad
+		  from emirepo
+		 where no_poliza = a_poliza
+		   and estatus not in(5,9);
+
+		if _cantidad > 0 then
+
+			select count(*)
+			  into _cnt
+			  from emideren
+			 where no_poliza = a_poliza
+			   and renglon   = 30;
+
+            if _cnt = 0 then
+
+				foreach
+					select renglon,usuario
+					  into _renglon,_usuario
+					  from tmp_reaut
+					 where no_poliza = a_poliza
+					   and renglon   = 30
+					   and tipo_ramo = 1
+
+					INSERT INTO emideren(no_poliza,renglon) VALUES (a_poliza,_renglon);
+				end foreach
+			else
+	            update emideren
+				   set activo    = 0
+				 where no_poliza = a_poliza
+				   and renglon   = 30;
+
+			end if
+
+            update emirepo
+			   set estatus    = 2,
+			       user_added = _usuario
+			 where no_poliza  = a_poliza;
+		else
+
+			foreach
+				select renglon,usuario
+				  into _renglon,_usuario
+				  from tmp_reaut
+				 where no_poliza = a_poliza
+				   and renglon   = 30
+				   and tipo_ramo = 1
+
+				INSERT INTO emideren(no_poliza,renglon) VALUES (a_poliza,_renglon);
+			end foreach
+
+			select usuario_cobros
+			  into _usu_cob
+			  from emirepar;
+
+			foreach
+				select cod_agente
+				  into _cod_agente
+				  from emipoagt
+				 where no_poliza = a_poliza
+
+			   exit foreach;
+			end foreach
+
+		    select count(*) 
+		      into v_cantidad 
+		      from recrcmae
+		     where no_poliza   = v_poliza
+		       and actualizado = 1;
+
+			if v_cantidad is null then
+				let v_cantidad = 0;
+			end if
+
+			-- Pagos, Salvamentos, Recuperos y Deducibles
+			let v_tot_pagos = 0;
+			foreach
+				select cod_tipotran 
+				  into v_tipo
+				  from rectitra
+				 where tipo_transaccion  IN (4,5,6,7)
+
+				select sum(x.monto) 
+		          into v_pagos
+		          from rectrmae x, recrcmae y
+		         where y.no_poliza     = v_poliza
+		           and y.actualizado   = 1
+		           and x.no_reclamo    = y.no_reclamo
+		           and x.actualizado   = 1
+		           and x.cod_tipotran  = v_tipo;
+
+				if v_pagos is null then
+			        let v_pagos = 0;
+			    end if
+
+				let v_tot_pagos = v_tot_pagos + v_pagos;
+			end foreach
+
+			-- Variacion de Reserva
+			select sum(x.variacion) 
+			  into v_incurrido
+		      from rectrmae x, recrcmae y
+		     where y.no_poliza   = v_poliza
+		       and y.actualizado = 1
+		       and x.no_reclamo  = y.no_reclamo
+		       and x.actualizado = 1;
+
+			if v_incurrido is null then
+				let v_incurrido = 0;
+			end if
+
+			-- Incurrido
+			let v_incurrido = v_incurrido + v_tot_pagos;
+
+			-- Solo Pagos
+			let v_tot_pagos = 0;
+
+			select cod_tipotran 
+		      into v_tipo
+		      from rectitra
+		     where tipo_transaccion  = 4;
+
+			select sum(x.monto) 
+		      into v_tot_pagos
+		      from rectrmae x, recrcmae y
+		     where y.no_poliza     = v_poliza
+		       and y.actualizado   = 1
+		       and x.no_reclamo    = y.no_reclamo
+		       and x.actualizado   = 1
+		       and x.cod_tipotran  = v_tipo;
+
+			if v_pagos is null then
+			    let v_tot_pagos = 0;
+		    end if
+
+			if v_tot_pagos is null then
+			    let v_tot_pagos = 0;
+		    end if
+
+			INSERT INTO emirepo(
+			no_poliza,
+			user_added,
+			cod_no_renov,
+			no_documento,
+			renovar,
+			no_renovar,
+			fecha_selec,
+			vigencia_inic,
+			vigencia_final,
+			saldo,
+			cant_reclamos,
+			no_factura,
+			incurrido,
+			pagos,
+			porc_depreciacion,
+			cod_agente,
+			estatus,
+			cod_sucursal,
+			user_cobros
+			)
+			VALUES(
+			a_poliza,
+			_usuario,
+			v_cod_no_renovar,
+		    v_documento,
+		    v_cod_renovar,
+		    v_renovar,
+			today,
+		    v_vigencia_inic, 
+		    v_vigencia_fin,
+		    v_saldo,
+			v_cantidad,
+		    v_factura, 
+		    v_incurrido,
+		    v_tot_pagos,
+			0.00,
+			_cod_agente,
+			2,
+			_centro_costo,
+			_usu_cob
+		    );
+		end if
+  end if
+
+end
+drop table tmp_reaut;
+return 0;
+
+end procedure;

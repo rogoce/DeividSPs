@@ -1,0 +1,478 @@
+drop procedure sp_pro28bk;
+
+create procedure sp_pro28bk(v_periodo char(7), a_no_documento char(20) default "*")
+returning integer;
+
+--- Renovacion de Polizas Opciones. Este programa lo usa el sup de renovaciones. para insertar por mes en emirepol.
+--- Creado 21/03/2005 por Armando Moreno
+
+begin
+
+define v_poliza     	char(10);
+define v_documento  	char(20);
+define v_factura    	char(10);
+define v_renovar    	smallint;
+define v_cod_renovar 	smallint;
+define v_cod_no_renovar char(3);
+define _cod_ramo        char(3);
+define _no_poliza       char(10);
+define v_vigencia_inic  date;
+define _vig_inic_ult    date;
+define v_vigencia_fin   date;
+define v_tipo       	char(3);
+define v_saldo      	decimal(16,2);
+define v_cant       	smallint;
+define v_cantidad   	smallint;
+define v_incurrido  	decimal(16,2);
+define v_pagos      	decimal(16,2);
+define v_tot_pagos  	decimal(16,2);
+define _perd_total  	smallint;
+define _todas_perdida  	smallint;
+define _cod_compania   	char(3);
+define _codigo_agencia	char(3);
+define _cod_sucursal   	char(3);
+define _centro_costo   	char(3);
+define _usuario      	char(8);
+define _cnt			  	smallint;
+define _cantidad	  	smallint;
+define _cod_agente      char(5);
+define _porc_partic  	decimal(5,2);
+define _vig_final		 date;
+define _bandera,_renueva smallint;
+define _tipo_agente      char(1);
+define _vigencia_fin_pol date;
+define _error2,_no_renovar_p smallint;
+define _mensaje          char(50);
+define _saber_agt        smallint;
+define _estatus_poliza   smallint;
+
+--SET DEBUG FILE TO "sp_pro28bk.trc"; 
+--TRACE ON;                                                                
+
+create temp table tmp_reno(
+usuario		char(8),
+cantidad	integer
+) with no log;
+
+set isolation to dirty read;
+
+let v_pagos          = 0;
+let v_incurrido      = 0;
+let v_cantidad       = 0;
+let v_saldo          = 0;
+let v_renovar        = 0;
+let v_cod_renovar    = 0;
+let v_poliza         = NULL;
+let v_factura        = NULL;
+let v_cod_no_renovar = NULL;
+let _renueva         = 1;
+let v_cantidad       = 0;
+let _mensaje         = "";
+let _no_renovar_p    = 0;
+
+if a_no_documento <> "*" then
+
+ let _no_poliza = sp_sis21(a_no_documento);
+
+ select vigencia_inic,
+        vigencia_final,
+		cod_ramo,
+		vigencia_fin_pol,
+		estatus_poliza,
+		no_renovar
+   into _vig_inic_ult,
+        _vig_final,
+		_cod_ramo,
+		_vigencia_fin_pol,
+		_estatus_poliza,
+		_no_renovar_p
+   from emipomae
+  where no_poliza = _no_poliza;
+  
+  if _estatus_poliza = 2 then
+	return 3;	--La poliza esta cancelada, no la pueden asignar al set de renovación
+  end if
+  if _no_renovar_p = 1 then
+	return 3;	--Poliza marcada como no renovar, no debe entrar al set de renovacion, puesto en prod. 22/04/2019 3:20pm
+  end if
+
+ if _cod_ramo = '020' then
+
+		 let _saber_agt = 0;
+
+		 foreach
+			select count(*)
+			  into _saber_agt
+			  from emipoagt
+			 where no_poliza  = _no_poliza
+			   and cod_agente = '00035'
+
+			exit foreach;
+		 end foreach
+		 if _saber_agt = 1 then	--Es Ducruet, no debe entrar al proceso
+		 else
+
+			 let _error2 = sp_pro316bk(_no_poliza);
+
+			 if _error2 <> 0 then
+				 return 1;
+			 else
+				 select count(*)
+				   into v_cantidad
+				   from tmp_reaut
+				  where no_poliza = _no_poliza
+				    and usuario   = "AUTOMATI";
+
+				 If v_cantidad > 0 then
+					 call sp_pro315n(_no_poliza) returning _error2,_mensaje;
+					 drop table tmp_reaut;
+					 return 0;
+				 Else
+					 select count(*)
+					   into v_cantidad
+					   from tmp_reaut
+					  where no_poliza = _no_poliza;
+
+					 if v_cantidad > 0 then	 --tiene excepciones, mandar mensaje
+						
+						 call sp_pro315n(_no_poliza) returning _error2,_mensaje;
+						 if _error2 = 0 then --No hubo error al crear las excepciones
+							return 2;
+						 end if
+						 if _error2 = 1 then --No entran a las excepciones
+							return 0;
+						 end if
+					 end if
+				 End if
+				 drop table tmp_reaut;
+			 end if
+		 end if
+
+ end if
+
+ if _cod_ramo = '019' then
+	if _vig_final = _vigencia_fin_pol then
+		return 0;
+	end if
+ end if
+
+
+ {let _bandera = 0;
+ let _renueva = 1;
+
+ foreach
+
+	select cod_agente
+	  into _cod_agente
+	  from emipoagt
+	 where no_poliza = _no_poliza
+
+	select tipo_agente,renueva
+	  into _tipo_agente,_renueva
+	  from agtagent
+	 where cod_agente = _cod_agente;
+
+	if _tipo_agente = 'E' and _renueva = 0 then
+
+	   let _bandera = 1;
+	   exit foreach;
+	   	
+	end if
+
+ end foreach
+
+ if _bandera = 1 then
+
+	drop table tmp_reno;
+	return 0;
+
+ end if} 
+
+ update emipomae
+    set renovada              = 0,
+		cod_no_renov   		  = null,
+		fecha_no_renov 		  = null,
+		user_no_renov  		  = null,
+		no_renovar            = 0
+  where year(vigencia_final)  = v_periodo[1,4]
+    and month(vigencia_final) = v_periodo[6,7]
+	and no_documento          = a_no_documento;
+
+end if
+
+foreach
+ select no_poliza, 
+		no_documento, 
+		no_factura,
+        renovada, 
+        no_renovar, 
+        cod_no_renov,
+        vigencia_inic, 
+        vigencia_final, 
+        saldo,
+		cod_compania,
+		cod_sucursal,
+		cod_ramo
+   into v_poliza, 
+ 	    v_documento, 
+ 	    v_factura, 
+ 	    v_renovar, 
+ 	    v_cod_renovar,
+        v_cod_no_renovar, 
+        v_vigencia_inic, 
+        v_vigencia_fin, 
+        v_saldo,
+		_cod_compania,
+		_cod_sucursal,
+		_cod_ramo
+   from emipomae
+  where year(vigencia_final)  = v_periodo[1,4]
+    and month(vigencia_final) = v_periodo[6,7]
+    and renovada       		  = 0
+    and no_renovar     		  = 0
+    and incobrable     		  = 0
+    and abierta        		  = 0
+    and actualizado           = 1
+    and estatus_poliza 		  IN (1,3)
+	and no_documento          MATCHES a_no_documento
+
+	let _porc_partic = 0.00;
+
+	foreach
+
+		select porc_partic_agt,
+			   cod_agente
+		  into _porc_partic,
+		       _cod_agente
+		  from emipoagt
+		 where no_poliza = v_poliza
+		 order by porc_partic_agt desc
+
+		exit foreach;
+
+	end foreach
+
+	-- centro de costo, para determinar el usuario(emireusu)
+
+	 select centro_costo
+	   into _centro_costo
+	   from insagen
+	  where codigo_agencia  = _cod_sucursal
+		and codigo_compania = _cod_compania;
+
+	 select count(*)
+	   into _cnt
+	   from emireusu
+	  where cod_sucursal = _centro_costo
+	    and cod_ramo     = _cod_ramo;
+
+	 if _cnt = 0 Then
+		 select count(*)
+		   into _cnt
+		   from emireusu
+		  where cod_sucursal = '001'
+		    and cod_ramo     = _cod_ramo;
+		  let _centro_costo = '001';  		
+	 end If
+	 if _cnt = 1 then
+		 select usuario
+		   into _usuario
+		   from emireusu
+		  where cod_sucursal = _centro_costo
+		    and cod_ramo     = _cod_ramo;
+	 end if
+	 if _cnt > 1 then
+		foreach
+		 select	usuario
+		   into	_usuario
+		   from emireusu
+		  where cod_sucursal = _centro_costo
+		    and cod_ramo     = _cod_ramo
+
+			select count(*)
+			  into _cantidad
+			  from emirepol
+			 where user_added = _usuario;
+
+			if _cantidad is null then
+				let _cantidad = 0;
+			end if
+
+			insert into tmp_reno
+			values (_usuario, _cantidad);
+
+		end foreach
+
+		foreach
+		 select cantidad,
+		        usuario
+		   into _cantidad,
+		        _usuario
+		   from tmp_reno
+		  order by 1, 2
+
+			exit foreach;
+
+		end foreach
+
+		delete from tmp_reno;
+	 end if
+
+	-- Excluir la poliza si todas las unidades son perdida
+
+    let _todas_perdida = 1;
+	foreach
+	 select perd_total 
+	   into _perd_total
+	   from emipouni
+	  where no_poliza = v_poliza
+		if _perd_total = 0 then
+			let _todas_perdida = 0;
+			exit foreach;
+		end if
+	end foreach
+
+	if _todas_perdida = 1 then
+		continue foreach;
+	end if
+
+	-- No Incluir la Poliza si fue Seleccionada por Otros Usuario
+
+	{let v_cant = 0;
+
+	select count(*)
+      into v_cant 
+      from emirepol
+     where no_poliza  = v_poliza
+       and user_added <> v_usuario;
+
+	if v_cant > 0 Then
+		continue foreach;
+	end If}
+
+    delete from emirepol
+     where no_poliza   = v_poliza;
+
+	let v_cantidad = 0;
+    select count(*) 
+      into v_cantidad 
+      from recrcmae
+     where recrcmae.no_poliza   = v_poliza
+       and recrcmae.actualizado = 1;
+
+	if v_cantidad is null then
+		let v_cantidad = 0;
+	end if
+
+	-- Pagos, Salvamentos, Recuperos y Deducibles
+
+   let v_tot_pagos = 0;
+   foreach
+	select x.cod_tipotran 
+      into v_tipo
+      from rectitra x
+     where x.tipo_transaccion  IN (4,5,6,7)
+
+		select sum(x.monto) 
+          into v_pagos
+          from rectrmae x, recrcmae y
+         where y.no_poliza     = v_poliza
+           and y.actualizado   = 1
+           and x.no_reclamo    = y.no_reclamo
+           and x.actualizado   = 1
+           and x.cod_tipotran  = v_tipo;
+
+		if v_pagos is null then
+	        let v_pagos = 0;
+	    end if
+
+		let v_tot_pagos = v_tot_pagos + v_pagos;
+
+   end foreach
+
+	-- Variacion de Reserva
+
+	select sum(x.variacion) 
+	  into v_incurrido
+      from rectrmae x, recrcmae y
+     where y.no_poliza   = v_poliza
+       and y.actualizado = 1
+       and x.no_reclamo  = y.no_reclamo
+       and x.actualizado = 1;
+
+	if v_incurrido is null then
+		let v_incurrido = 0;
+	end if
+
+	-- Incurrido
+
+	let v_incurrido = v_incurrido + v_tot_pagos;
+
+	-- Solo Pagos
+
+	let v_tot_pagos = 0;
+
+	select x.cod_tipotran 
+      into v_tipo
+      from rectitra x
+     where x.tipo_transaccion  = 4;
+
+	select sum(x.monto) 
+      into v_tot_pagos
+      from rectrmae x, recrcmae y
+     where y.no_poliza     = v_poliza
+       and y.actualizado   = 1
+       and x.no_reclamo    = y.no_reclamo
+       and x.actualizado   = 1
+       and x.cod_tipotran  = v_tipo;
+
+	if v_pagos is null then
+	    let v_tot_pagos = 0;
+    end if
+
+	if v_tot_pagos is null then
+	    let v_tot_pagos = 0;
+    end if
+
+	INSERT INTO emirepol(
+	no_poliza,
+	user_added,
+	cod_no_renov,
+	no_documento,
+	renovar,
+	no_renovar,
+	fecha_selec,
+	vigencia_inic,
+	vigencia_final,
+	saldo,
+	cant_reclamos,
+	no_factura,
+	incurrido,
+	pagos,
+	porc_depreciacion,
+	cod_agente
+	)
+	VALUES(
+	v_poliza,
+	_usuario,
+	v_cod_no_renovar,
+    v_documento,
+    v_cod_renovar,
+    v_renovar,
+	today,
+    v_vigencia_inic, 
+    v_vigencia_fin,
+    v_saldo,
+	v_cantidad,
+    v_factura, 
+    v_incurrido,
+    v_tot_pagos,
+	0.00,
+	_cod_agente
+    );
+
+end foreach
+drop table tmp_reno;
+end
+return 0;
+end procedure;

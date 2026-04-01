@@ -1,0 +1,513 @@
+--Reporte para el Cuadre de las cuentas de Prima Cobrada por Ramo y Auxiliar
+--Creado    : 28/12/2015 - Autor: Henry Giron
+--execute procedure sp_cob779('001','001','2019-09','2019-09',4,'sac')
+drop procedure sp_cob779;
+create procedure "informix".sp_cob779(
+a_compania		char(03),
+a_agencia		char(03),
+a_periodo1		char(07),
+a_periodo2		char(07),
+a_nivel			smallint,
+a_db			char(18))
+returning	varchar(50)	as compania,
+			varchar(50)	as nom_cuenta,
+			char(18)	as cuenta,			
+			char(3)		as cod_ramo,
+			varchar(50)	as nom_ramo,
+			dec(16,2)	as monto_tecnico,
+			dec(16,2)	as saldo,
+			dec(16,2)	as diferencia,
+			char(5)     as tercero,
+			varchar(50)	as nom_auxiliar,
+			dec(16,2)	as monto_comprobantes,
+			dec(16,2)	as saldo_sin_comprob;			
+	
+
+begin
+
+define v_filtros			varchar(255);
+define _nom_cuenta			varchar(50);
+define v_desc_ramo			varchar(50);
+define v_descr_cia			varchar(50);
+define _cuenta				char(18);
+define _no_poliza			char(10);
+define _ano					char(4);
+define _cod_tipoprod		char(3);
+define _cod_ramo			char(3);
+define _prima_cobrada		dec(16,2);
+define _monto_total			dec(16,2);
+define _diferencia			dec(16,2);
+define _saldo				dec(16,2);
+define _siniestro           dec(16,2);
+define _ramo_sis			smallint;
+define _mes					smallint;
+define _cod_subramo     	char(3);
+define _cod_coasegur		char(3);
+define _cod_origen_aseg		char(3);
+define _cod_auxiliar		char(5);
+define _no_remesa			char(10);
+define _renglon				integer;
+DEFINE v_aux_terc		    CHAR(5);
+define _error				integer;
+define _error_desc			varchar(255);
+define a_codramo            char(255);
+define a_serie              char(255);
+define _cnt                 integer;
+define _fecha_desde			date;
+define _fecha_hasta			date;
+define _monto_comprobantes  dec(16,2);
+define _saldo_sin_comprob  dec(16,2);
+define _diferencia2			dec(16,2);
+define _saldo2				dec(16,2);
+
+
+set isolation to dirty read;
+
+let _prima_cobrada  = 0;
+let _monto_total    = 0;
+let _cod_subramo    = '001';
+let _monto_comprobantes  = 0;
+let _saldo_sin_comprob = 0;
+let _diferencia2  = 0;
+let _saldo2    = 0;
+let v_descr_cia = sp_sis01(a_compania);
+
+drop table if exists tmp_balance;
+drop table if exists tmp_saldos;
+drop table if exists temp_det;
+drop table if exists tmp_produccion_ps;
+drop table if exists temp_ps;
+drop table if exists temp_ps_det;
+
+--Tabla Maestra del Procedimiento
+create temp table tmp_balance(
+cuenta		char(12)  not null,
+cod_ramo	char(3)   not null,
+monto_total	dec(16,2) default 0,
+saldo		dec(16,2) default 0,
+diferencia	dec(16,2) default 0,
+tercero		char(5)   not null,
+primary key (cuenta,cod_ramo,tercero)) with no log;
+
+--Tabla para el proceso de saldos por cuenta.
+drop table if exists tmp_saldos;
+CREATE TEMP TABLE tmp_saldos(
+	    periodo         CHAR(100),
+		tercero         CHAR(5),
+		nombre			CHAR(50),
+		inicial         DEC(15,2)	default 0,
+		debito          DEC(15,2)	default 0,
+		credito         DEC(15,2)	default 0,   
+		neto            DEC(15,2)	default 0,
+		acumulado       DEC(15,2)	default 0,
+		cia				CHAR(50),
+		nom_cuenta		CHAR(50),
+		cuenta          char(12)
+		) WITH NO LOG; 	
+		
+drop table if exists tmp_info;
+create temp table tmp_info(
+cod_coasegur		char(3),
+cod_ramo			char(3),
+cod_contrato		char(5),
+cobertura			char(3),
+prima				dec(16,2),
+comision			dec(16,2),
+impuesto			dec(16,2),
+por_pagar			dec(16,2),
+siniestro			dec(16,2),
+prima_tot_ret		dec(16,2),
+prima_sus_tot		dec(16,2),
+porc_cont_partic	dec(16,2),
+desc_ramo			char(50),
+desc_contrato		char(50),
+por_pagar_partic	dec(16,2),
+siniestro_partic	dec(16,2)) with no log;		
+
+let _ano = a_periodo1[1,4];
+let _mes = a_periodo1[6,7];
+let _fecha_desde = mdy(a_periodo1[6,7],1,a_periodo1[1,4]);
+let _fecha_hasta = sp_sis36(a_periodo1);
+
+let a_codramo = "001,003,006,008,010,011,012,013,014,021,022;";
+let a_serie = "2019,2018,2017,2016,2015,2014,2013,2012,2011,2010,2009,2008;";
+{
+--Procedure de Generacion de Primas Suscrita Facultativo para el periodo dado.
+call sp_pr123h('001','001',a_periodo1,a_periodo2,"*","*","*","*",a_codramo,"*","*",a_serie,0)
+returning _error, _error_desc;
+if _error <> 0 then
+	return v_descr_cia,
+			'',
+			'',
+			'',
+			_error_desc,
+			0.00,
+			0.00,
+			_error,
+			'','',0,0;	
+end if
+
+	select * 
+	  from tmp_produccion_ps
+	  into temp temp_ps;
+	  
+	select * 
+	  from temp_det
+	  into temp temp_ps_det;	 	  	   
+	  
+insert into tmp_info(
+			cod_coasegur,	  
+			cod_ramo,		  
+			cod_contrato,	  
+			cobertura,	      
+			prima, 		      
+			comision, 		  
+			impuesto, 		  
+			por_pagar,		  
+			siniestro,		  
+			prima_tot_ret,	  
+			prima_sus_tot,	  
+			porc_cont_partic, 
+			desc_ramo,	      
+			desc_contrato,      
+			por_pagar_partic, 
+			siniestro_partic) 
+select 		cod_coasegur,	  
+			cod_ramo,		  
+			cod_contrato,	  
+			cobertura,	      
+			prima, 		      
+			comision, 		  
+			impuesto, 		  
+			por_pagar,		  
+			siniestro,		  
+			prima_tot_ret,	  
+			prima_sus_tot,	  
+			porc_cont_partic, 
+			desc_ramo,	      
+			desc_contrato,      
+			por_pagar, 
+			siniestro
+from temp_imformef;		  
+}
+
+--Procedure de Generacion de Primas Cobrada para el periodo dado.
+call sp_pr860h('001','001',a_periodo1,a_periodo2,"*","*","*","*",a_codramo,"*",a_serie,"01","*")
+returning _error, _error_desc;
+if _error <> 0 then
+	return v_descr_cia,
+			'',
+			'',
+			'',
+			_error_desc,
+			0.00,
+			0.00,
+			_error,
+			'','',0,0;		
+end if
+
+insert into tmp_info(
+			cod_coasegur,	  
+			cod_ramo,		  
+			cod_contrato,	  
+			cobertura,	      
+			prima, 		      
+			comision, 		  
+			impuesto, 		  
+			por_pagar,		  
+			siniestro,		  
+			prima_tot_ret,	  
+			prima_sus_tot,	  
+			porc_cont_partic, 
+			desc_ramo,	      
+			desc_contrato,      
+			por_pagar_partic, 
+			siniestro_partic) 
+select 		cod_coasegur,	  
+			cod_ramo,		  
+			cod_contrato,	  
+			cobertura,	      
+			prima, 		      
+			comision, 		  
+			impuesto, 		  
+			por_pagar,		  
+			siniestro,		  
+			prima_tot_ret,	  
+			prima_sus_tot,	  
+			porc_cont_partic, 
+			desc_ramo,	      
+			desc_contrato,      
+			por_pagar_partic, 
+			siniestro_partic
+from temp_informe;	
+		
+foreach
+	select distinct cod_ramo,cod_coasegur
+	  into _cod_ramo,_cod_coasegur
+	from tmp_info	
+	order by cod_ramo, cod_coasegur					
+
+	select cod_origen,
+		   aux_bouquet
+	  into _cod_origen_aseg,
+		   _cod_auxiliar
+	  from emicoase
+	 where cod_coasegur = _cod_coasegur;
+	 
+	let _cuenta = sp_sis15("PPRXP", "05", _cod_origen_aseg, _cod_ramo,_cod_subramo);   	
+	let _cnt = 0;
+	select count(*)
+	  into _cnt
+	  from tmp_saldos
+	 where cuenta = _cuenta
+	   and tercero = _cod_auxiliar ;
+	if _cnt = 0 then 
+	
+		call sp_sac42_aux('01',_cuenta,_cod_auxiliar,_ano,_mes,a_db) returning _error, _error_desc;	
+		if _error <> 0 then
+			return v_descr_cia,
+					'',
+					'',
+					'',
+					_error_desc,
+					0.00,
+					0.00,
+					_error,
+					'','',0,0;								
+		end if
+	end if
+	
+end foreach
+
+foreach with hold
+	select cod_ramo,cod_coasegur,sum(por_pagar_partic)
+	  into _cod_ramo,_cod_coasegur,_prima_cobrada
+	from tmp_info
+	group by cod_ramo,cod_coasegur
+	order by cod_ramo,cod_coasegur	
+	
+	if _prima_cobrada is null then
+		let _prima_cobrada = 0.00;
+	end if
+	
+	if _prima_cobrada = 0.00 then
+		continue foreach;
+	end if		
+	
+	select cod_origen,
+		   aux_bouquet
+	  into _cod_origen_aseg,
+		   _cod_auxiliar
+	  from emicoase
+	 where cod_coasegur = _cod_coasegur;
+	 
+	let _cuenta = sp_sis15("PPRXP", "05", _cod_origen_aseg, _cod_ramo,_cod_subramo);   		
+	
+	if _cuenta is null then
+		continue foreach;
+	end if	
+	
+	if _cod_ramo in ('006') then -- R.C.G. se contabiliza en Responsabilidad Civil
+		let _cod_ramo = '006';
+	elif _cod_ramo in ('008') then -- Fianza
+		let _cod_ramo = '008';		
+	elif _cod_ramo in ('003','001') then -- Multiriesgo, Incendio y Terremoto se contabiliza en Incendio
+		let _cod_ramo = '001';
+	elif _cod_ramo in ('010','011','012','013','014','022') then	-- Ramos técnicos
+		let _cod_ramo = '099';
+	end if	
+	
+	select (debito + credito) --neto --saldo
+	  into _saldo
+	  from tmp_saldos
+	 where cuenta = _cuenta	   
+	   and tercero = _cod_auxiliar;
+
+	if _saldo is null then
+		let _saldo = 0.00;
+	end if
+
+	begin
+		on exception in(-239,-268)
+			update tmp_balance
+			   set monto_total = monto_total + _prima_cobrada,
+				   diferencia = diferencia + _prima_cobrada
+			 where trim(cuenta) = _cuenta
+			   and cod_ramo = _cod_ramo
+			   and tercero  = _cod_auxiliar;
+
+		end exception
+		insert into tmp_balance(
+				cuenta,
+				cod_ramo,
+				monto_total,
+				saldo,
+				diferencia,
+				tercero)
+		values(	_cuenta,
+				_cod_ramo,
+				_prima_cobrada,
+				_saldo,
+				_saldo + _prima_cobrada,
+				_cod_auxiliar);
+	end
+end foreach
+
+foreach with hold
+	select cod_ramo,cod_coasegur,sum(siniestro_partic*-1)
+	  into _cod_ramo,_cod_coasegur,_siniestro
+	from tmp_info	
+	group by cod_ramo,cod_coasegur
+	order by cod_ramo,cod_coasegur		
+	
+	if _siniestro is null then
+		let _siniestro = 0.00;
+	end if
+	
+	if _siniestro = 0.00 then
+		continue foreach;
+	end if		
+	
+	select cod_origen,
+		   aux_bouquet
+	  into _cod_origen_aseg,
+		   _cod_auxiliar
+	  from emicoase
+	 where cod_coasegur = _cod_coasegur;
+	 
+	let _cuenta = sp_sis15("PPRXP", "05", _cod_origen_aseg, _cod_ramo, _cod_subramo);   		
+	
+	if _cuenta is null then
+		continue foreach;
+	end if
+	if _cod_ramo in ('006') then -- R.C.G. se contabiliza en Responsabilidad Civil
+		let _cod_ramo = '006';
+	elif _cod_ramo in ('008') then -- Fianza
+		let _cod_ramo = '008';		
+	elif _cod_ramo in ('003','001') then --Multiriesgo, Incendio y Terremoto se contabiliza en Incendio
+		let _cod_ramo = '001';
+	elif _cod_ramo in ('010','011','012','013','014','022') then	-- Ramos técnicos
+		let _cod_ramo = '099';
+	end if	
+	
+	select (debito + credito) --neto --saldo
+	  into _saldo
+	  from tmp_saldos	  
+	 where cuenta = _cuenta	   
+	   and tercero = _cod_auxiliar;
+
+	if _saldo is null then
+		let _saldo = 0.00;
+	end if
+
+	begin
+		on exception in(-239,-268)
+			update tmp_balance
+			   set monto_total = monto_total + _siniestro,
+				   diferencia = diferencia + _siniestro
+			 where trim(cuenta) = _cuenta
+			   and cod_ramo = _cod_ramo
+			   and tercero  = _cod_auxiliar;
+
+		end exception
+		insert into tmp_balance(
+				cuenta,
+				cod_ramo,
+				monto_total,
+				saldo,
+				diferencia,
+				tercero)
+		values(	_cuenta,
+				_cod_ramo,
+				_siniestro,
+				_saldo,
+				_saldo + _siniestro,
+				_cod_auxiliar);
+	end
+end foreach
+
+foreach
+	select cuenta,
+	       tercero,
+		   cod_ramo,
+		   monto_total,
+		   saldo,
+		   diferencia
+	  into _cuenta,
+	       _cod_auxiliar,
+		   _cod_ramo,
+		   _monto_total,
+		   _saldo,
+		   _diferencia
+	  from tmp_balance
+	  
+	   let _monto_comprobantes = 0;
+	   let _saldo_sin_comprob = 0;
+	  
+	select sum(res1_debito - res1_credito)
+	  into _monto_comprobantes
+	  from cglresumen, cglresumen1
+	 where res_noregistro = res1_noregistro
+	   and res_cuenta = _cuenta
+	   and res_fechatrx between _fecha_desde and _fecha_hasta
+	   and res1_auxiliar  =  _cod_auxiliar
+	   and res_origen = 'CGL';	   
+	   
+	   if _monto_comprobantes is null then
+		  let _monto_comprobantes = 0.00;
+	  end if
+
+
+		select nombre
+		  into v_desc_ramo
+		  from prdramo
+		 where cod_ramo = _cod_ramo;
+		 
+		if (_monto_total = 0 and _saldo = 0) or _diferencia = 0 then
+		   continue foreach;
+	    end if		 
+		--if _diferencia < _monto_comprobantes then
+			let _saldo_sin_comprob = _diferencia + _monto_comprobantes*-1;
+		--else
+		--	let _saldo_sin_comprob = _diferencia + abs(_monto_comprobantes);
+		--end if
+		
+	if _cod_ramo <> '099' then
+		select nombre
+		  into v_desc_ramo
+		  from prdramo
+		 where cod_ramo = _cod_ramo;
+	else
+		let v_desc_ramo = 'RAMOS TECNICOS';
+	end if		
+
+	select nombre
+	  into _nom_cuenta
+	  from tmp_saldos
+	 where cuenta = _cuenta
+	 and tercero = _cod_auxiliar;
+	 
+	 let _diferencia2  = _diferencia + _monto_comprobantes*-1;
+     let _saldo2    = _saldo + _monto_comprobantes*-1;
+
+	return	v_descr_cia,
+			_nom_cuenta,
+			_cuenta,
+			_cod_ramo,
+			v_desc_ramo,
+			_monto_total,
+			_saldo2,
+			_diferencia2, 
+			_cod_auxiliar, 
+			_nom_cuenta,
+			_monto_comprobantes,
+			_saldo_sin_comprob  
+			with resume;
+			
+end foreach
+
+
+
+end
+
+end procedure;

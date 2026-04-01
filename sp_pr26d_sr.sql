@@ -1,0 +1,307 @@
+-- Reporte de Total de Produccion por Corredor
+--
+-- Creado    : 04/08/2000 - Autor: Lic. Armando Moreno
+-- Modificado: 20/07/2001 - Autor: Lic. Armando Moreno
+--
+-- SIS v.2.0 d_- DEIVID, S.A.
+
+DROP PROCEDURE sp_pro26d_sr;
+
+CREATE PROCEDURE "informix".sp_pro26d_sr(a_compania CHAR(3),a_agencia  CHAR(3),a_periodo1 CHAR(7),a_periodo2 CHAR(7),a_sucursal CHAR(255) DEFAULT "*",a_ramo CHAR(255) DEFAULT "*",a_grupo    CHAR(255) DEFAULT "*", a_usuario  CHAR(255) DEFAULT "*", a_reaseguro CHAR(255) DEFAULT "*", a_agente CHAR(255) DEFAULT "*", a_producto CHAR(255) DEFAULT "*", a_subramo CHAR(255) DEFAULT "*")
+		RETURNING   CHAR(50),
+		            DECIMAL(16,2),
+					INTEGER,
+		            DECIMAL(16,2),
+					INTEGER,
+		            DECIMAL(16,2), 
+					INTEGER,
+		            DECIMAL(16,2), 
+					INTEGER,
+		            DECIMAL(16,2), 
+					INTEGER,
+		            DECIMAL(16,2),
+		            INTEGER,
+		            CHAR(50),
+		            CHAR(255);
+
+DEFINE v_nombre          CHAR(50);
+DEFINE v_total_prima_sus DECIMAL(16,2);
+DEFINE v_total_prima_nva DECIMAL(16,2);
+DEFINE v_total_prima_ren DECIMAL(16,2);
+DEFINE v_total_prima_end DECIMAL(16,2);
+DEFINE v_total_prima_can DECIMAL(16,2);
+DEFINE v_total_prima_rev DECIMAL(16,2);
+DEFINE v_cnt_prima_sus   INTEGER;
+DEFINE v_cnt_prima_nva   INTEGER;
+DEFINE v_cnt_prima_ren   INTEGER;
+DEFINE v_cnt_prima_end   INTEGER;
+DEFINE v_cnt_prima_can   INTEGER;
+DEFINE v_cnt_prima_rev   INTEGER;
+DEFINE v_compania_nombre CHAR(50); 
+DEFINE v_filtros         CHAR(255);
+DEFINE _cod_agente       CHAR(5);
+DEFINE _tipo             CHAR(1);
+DEFINE _ano              CHAR(4);
+
+set isolation to dirty read;
+
+CREATE TEMP TABLE tmp_prod2(
+		cod_agente 			 CHAR(5)  NOT NULL,
+		nombre               CHAR(50),
+	   	total_pri_sus        DECIMAL(16,2),
+		total_pri_nva        DECIMAL(16,2),
+		total_pri_ren        DECIMAL(16,2),
+		total_pri_end        DECIMAL(16,2),
+		total_pri_can        DECIMAL(16,2),
+		total_pri_rev        DECIMAL(16,2),
+		cnt_prima_sus    	 DECIMAL(16,2),
+ 		cnt_prima_nva   	 DECIMAL(16,2),
+		cnt_prima_ren   	 DECIMAL(16,2),
+		cnt_prima_end   	 DECIMAL(16,2),
+		cnt_prima_can   	 DECIMAL(16,2),
+		cnt_prima_rev   	 DECIMAL(16,2),
+		PRIMARY KEY (cod_agente)) WITH NO LOG;
+
+-- Nombre de la Compania
+
+LET v_compania_nombre = sp_sis01(a_compania);
+LET _ano = a_periodo1[1,4];
+
+LET v_filtros = sp_pro26_018(
+a_compania,
+a_agencia, 
+a_periodo1,
+a_periodo2,
+a_sucursal,
+a_ramo,
+a_grupo, 
+a_usuario,
+a_reaseguro,
+a_agente,
+a_producto
+);
+
+-- Filtro de Subramo  AMORENO: 09/05/2018 
+  IF a_subramo <> "*" THEN
+	 LET v_filtros = TRIM(v_filtros) ||"Subramo "||TRIM(a_subramo);
+	 LET _tipo = sp_sis04(a_subramo); -- Separa los valores del String
+
+	 IF _tipo <> "E" THEN -- Incluir los Registros
+
+		UPDATE tmp_prod
+			   SET seleccionado = 0
+			 WHERE seleccionado = 1
+			   AND cod_subramo NOT IN(SELECT codigo FROM tmp_codigos);
+	 ELSE
+		UPDATE tmp_prod
+			   SET seleccionado = 0
+			 WHERE seleccionado = 1
+			   AND cod_subramo IN(SELECT codigo FROM tmp_codigos);
+	 END IF
+	 DROP TABLE tmp_codigos;
+  END IF
+
+--Recorre la tabla temporal y asigna valores a variables de salida
+FOREACH WITH HOLD
+ SELECT cod_agente,
+		total_pri_sus,
+		total_pri_nva,
+		total_pri_ren, 
+		total_pri_end, 
+		total_pri_can, 
+		total_pri_rev, 
+		cnt_prima_sus, 
+		cnt_prima_nva, 
+		cnt_prima_ren, 
+		cnt_prima_end, 
+		cnt_prima_can, 
+		cnt_prima_rev
+   INTO _cod_agente,
+		v_total_prima_sus,
+		v_total_prima_nva, 
+		v_total_prima_ren, 
+		v_total_prima_end, 
+		v_total_prima_can, 
+		v_total_prima_rev, 
+		v_cnt_prima_sus, 
+		v_cnt_prima_nva, 
+		v_cnt_prima_ren, 
+		v_cnt_prima_end, 
+		v_cnt_prima_can, 
+		v_cnt_prima_rev
+   FROM tmp_prod
+  WHERE	seleccionado = 1
+ 
+   BEGIN
+	ON EXCEPTION IN(-239)
+
+		UPDATE tmp_prod2
+		   SET total_pri_sus   = total_pri_sus + v_total_prima_sus,
+			   total_pri_nva   = total_pri_nva + v_total_prima_nva,
+			   total_pri_ren   = total_pri_ren + v_total_prima_ren,
+			   total_pri_end   = total_pri_end + v_total_prima_end,
+			   total_pri_can   = total_pri_can + v_total_prima_can,
+			   total_pri_rev   = total_pri_rev + v_total_prima_rev,
+			   cnt_prima_sus   = cnt_prima_sus + v_cnt_prima_sus,
+			   cnt_prima_nva   = cnt_prima_nva + v_cnt_prima_nva,	
+			   cnt_prima_ren   = cnt_prima_ren + v_cnt_prima_ren,	
+			   cnt_prima_end   = cnt_prima_end + v_cnt_prima_end,	
+			   cnt_prima_can   = cnt_prima_can + v_cnt_prima_can,	
+			   cnt_prima_rev   = cnt_prima_rev + v_cnt_prima_rev
+		 WHERE cod_agente      = _cod_agente;
+
+	END EXCEPTION;
+
+	SELECT nombre
+      INTO v_nombre
+      FROM agtagent
+     WHERE cod_agente = _cod_agente;
+
+    INSERT INTO tmp_prod2(
+			cod_agente,
+			nombre,
+			total_pri_sus,
+			total_pri_nva,
+			total_pri_ren,
+			total_pri_end,	
+			total_pri_can,
+			total_pri_rev,
+			cnt_prima_sus,
+			cnt_prima_nva,
+			cnt_prima_ren,
+			cnt_prima_end,
+			cnt_prima_can,
+			cnt_prima_rev
+			)
+			VALUES(
+			_cod_agente,
+			v_nombre,
+			v_total_prima_sus, 
+			v_total_prima_nva,
+			v_total_prima_ren, 
+			v_total_prima_end,
+			v_total_prima_can,
+			v_total_prima_rev, 
+			v_cnt_prima_sus,	
+			v_cnt_prima_nva,
+			v_cnt_prima_ren,	
+			v_cnt_prima_end,
+			v_cnt_prima_can,	
+			v_cnt_prima_rev
+			);
+   END
+END FOREACH;
+
+--set debug file to "sp_pro26d_sr.trc";
+--trace on;
+
+delete from tmp_agt_ps where ano = _ano;
+
+FOREACH WITH HOLD
+  SELECT cod_agente,
+		 nombre,
+		 total_pri_sus,
+		 total_pri_nva,
+		 total_pri_ren,
+		 total_pri_end, 
+		 total_pri_can, 
+		 total_pri_rev, 
+		 cnt_prima_sus, 
+		 cnt_prima_nva, 
+		 cnt_prima_ren, 
+		 cnt_prima_end, 
+		 cnt_prima_can, 
+		 cnt_prima_rev
+   INTO  _cod_agente,
+   		 v_nombre,
+		 v_total_prima_sus, 
+		 v_total_prima_nva, 
+		 v_total_prima_ren, 
+		 v_total_prima_end, 
+		 v_total_prima_can, 
+		 v_total_prima_rev, 
+		 v_cnt_prima_sus, 
+		 v_cnt_prima_nva, 
+		 v_cnt_prima_ren, 
+		 v_cnt_prima_end, 
+		 v_cnt_prima_can, 
+		 v_cnt_prima_rev
+   FROM tmp_prod2
+  ORDER BY cod_agente DESC
+ 
+    if _ano = '2018' then  
+		insert into tmp_agt_ps (
+			agente,
+			ps_2018,
+			cnt_ps_2018,
+			cod_agente,
+			ano)
+		values (
+			v_nombre,
+			v_total_prima_sus,
+			v_cnt_prima_sus,
+			_cod_agente,
+			_ano);
+	elif _ano = '2019' then
+		insert into tmp_agt_ps (
+			agente,
+			ps_2019,
+			cnt_ps_2019,
+			cod_agente,
+			ano)
+		values (
+			v_nombre,
+			v_total_prima_sus,
+			v_cnt_prima_sus,
+			_cod_agente,
+			_ano);
+	elif _ano = '2020' then
+		insert into tmp_agt_ps (
+			agente,
+			ps_2020,
+			cnt_ps_2020,
+			cod_agente,
+			ano)
+		values (
+			v_nombre,
+			v_total_prima_sus,
+			v_cnt_prima_sus,
+			_cod_agente,
+			_ano);
+	elif _ano = '2021' then
+		insert into tmp_agt_ps (
+			agente,
+			ps_2021,
+			cnt_ps_2021,
+			cod_agente,
+			ano)
+		values (
+			v_nombre,
+			v_total_prima_sus,
+			v_cnt_prima_sus,
+			_cod_agente,
+			_ano);
+	end if
+
+	RETURN  v_nombre,
+			v_total_prima_sus,
+			v_cnt_prima_sus,
+			v_total_prima_nva,
+			v_cnt_prima_nva,
+			v_total_prima_ren,
+			v_cnt_prima_ren,
+			v_total_prima_end,
+			v_cnt_prima_end,
+			v_total_prima_can,
+			v_cnt_prima_can,
+			v_total_prima_rev,
+			v_cnt_prima_rev,
+			v_compania_nombre,
+			v_filtros
+		    WITH RESUME;
+END FOREACH
+
+DROP TABLE tmp_prod;
+DROP TABLE tmp_prod2;
+
+END PROCEDURE;

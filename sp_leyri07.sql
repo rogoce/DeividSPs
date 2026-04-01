@@ -1,0 +1,313 @@
+-- Busqueda de polizas con corredor directo afectadas por la cuenta 26401
+--
+-- creado    : 28/01/2013 - Autor: Armando Moreno
+-- sis v.2.0
+
+drop procedure sp_leyri07;
+create procedure "informix".sp_leyri07()
+returning   char(10),
+			varchar(50),
+			char(20),
+			char(10),
+			char(15),
+			integer,
+			dec(16,2),
+			dec(16,2),
+			char(1);
+
+define _error_desc		char(100);
+define _no_poliza		char(10);
+define _no_remesa		char(10);
+define _cod_formapag	char(3);
+define _monto			dec(16,2);
+define _res_origen	    char(3);
+define _cod_agente      char(5);
+define _error			smallint;
+define _error_isam		smallint;
+define _fronting		smallint;
+define _renglon,_cnt	integer;
+define _res_notrx       integer;
+define _n_agente        varchar(50);
+define _no_documento    char(20);
+define _no_endoso       char(5);
+define _res_comprobante char(15);
+define _res_db			dec(16,2);
+define _res_cr			dec(16,2);
+define _tipo_agente     char(1);
+
+begin
+
+{on exception set _error,_error_isam,_error_desc 
+ 	return _error,_error_desc,'','','';
+end exception}
+
+set isolation to dirty read;
+
+--set debug file to "sp_leyri07.trc"; 
+--trace on;
+
+let _res_db = 0.00;
+let	_res_cr	= 0.00;
+
+ CREATE TEMP TABLE tmp_cgl
+           (cod_agente       CHAR(5),
+		    no_poliza        CHAR(10),
+			debito           DEC(16,2) default 0,
+			credito          DEC(16,2) default 0,
+			res_origen       char(3),
+			res_notrx        integer,
+			res_comprobante  char(15)
+			) WITH NO LOG;
+
+
+foreach
+	select res_origen,
+	       res_notrx,
+		   res_comprobante
+	  into _res_origen,
+	       _res_notrx,
+		   _res_comprobante
+      from sac:cglresumen
+	 where res_fechatrx   >= '01/01/2012'
+	   and res_fechatrx   <= '31/12/2012'
+	   and res_cuenta     = '26401'	 
+
+    if _res_origen = 'PRO' then
+
+	   foreach
+		   select no_poliza,
+		          no_endoso,
+				  debito,
+				  credito
+		     into _no_poliza,
+			      _no_endoso,
+				  _res_db,
+				  _res_cr
+		     from endasien
+			where sac_notrx = _res_notrx
+			  and cuenta    = '26401'
+
+		   foreach
+
+				select cod_agente
+				  into _cod_agente
+				  from endmoage
+				 where no_poliza = _no_poliza
+				   and no_endoso = _no_endoso
+
+{				select count(*)
+				  into _cnt
+				  from agtagent
+				 where cod_agente  = _cod_agente
+				   and tipo_agente = "O";}
+
+--				if _cnt > 0 then
+
+					insert into tmp_cgl(
+					cod_agente,  
+					no_poliza,
+					res_origen,
+					res_notrx,
+					res_comprobante,
+					debito,
+					credito
+					)
+					values(
+					_cod_agente,
+					_no_poliza,
+					_res_origen,
+					_res_notrx,
+					_res_comprobante,
+					_res_db,
+					_res_cr
+					);					
+										
+--				end if
+
+		   end foreach
+
+	   end foreach
+
+	elif _res_origen = 'COB' then
+
+	   foreach
+		   select no_remesa,
+		          renglon,
+				  debito,
+				  credito
+			 into _no_remesa,
+			      _renglon,
+				  _res_db,
+				  _res_cr
+	         from cobasien
+			where sac_notrx = _res_notrx
+			  and cuenta    = '26401'
+
+           select no_poliza
+		     into _no_poliza
+			 from cobredet
+			where no_remesa = _no_remesa
+			  and renglon   = _renglon;
+
+		  foreach
+
+	           select cod_agente
+			     into _cod_agente
+				 from cobreagt
+				where no_remesa = _no_remesa
+				  and renglon   = _renglon
+
+			  {	select count(*)
+				  into _cnt
+				  from agtagent
+				 where cod_agente  = _cod_agente
+				   and tipo_agente = "O";
+
+				if _cnt > 0 then}
+
+					insert into tmp_cgl(
+					cod_agente,  
+					no_poliza,
+					res_origen,
+					res_notrx,
+					res_comprobante,
+					debito,
+					credito
+					)
+					values(
+					_cod_agente,
+					_no_poliza,
+					_res_origen,
+					_res_notrx,
+					_res_comprobante,
+					_res_db,
+					_res_cr
+					);					
+										
+--				end if
+
+		  end foreach
+
+	   end foreach
+
+	elif _res_origen = 'CHE' then
+
+	  foreach
+
+		select no_poliza,
+		       debito,
+			   credito
+		  into _no_poliza,
+			   _res_db,
+		       _res_cr
+		  from chqchcta
+		 where sac_notrx = _res_notrx
+		   and cuenta    = '26401'
+
+        if _no_poliza is not null then
+
+		   foreach
+				select cod_agente
+				  into _cod_agente
+				  from emipoagt
+				 where no_poliza = _no_poliza
+
+			   {	select count(*)
+				  into _cnt
+				  from agtagent
+				 where cod_agente  = _cod_agente
+				   and tipo_agente = "O";
+
+				if _cnt > 0 then }
+
+					insert into tmp_cgl(
+					cod_agente,  
+					no_poliza,
+					res_origen,
+					res_notrx,
+					res_comprobante,
+					debito,
+					credito
+					)
+					values(
+					_cod_agente,
+					_no_poliza,
+					_res_origen,
+					_res_notrx,
+					_res_comprobante,
+					_res_db,
+					_res_cr
+					);					
+										
+--				end if
+
+		   end foreach
+
+		else
+
+		   let _no_poliza = 'ERR';
+
+			insert into tmp_cgl(
+			cod_agente,  
+			no_poliza,
+			res_origen,
+			res_notrx,
+			res_comprobante
+			)
+			values(
+			_cod_agente,
+			_no_poliza,
+			_res_origen,
+			_res_notrx,
+			_res_comprobante
+			);					
+
+		end if
+
+	  end foreach
+
+	else
+		continue foreach;
+	end if
+
+end foreach
+
+foreach
+
+	select no_poliza,
+	       cod_agente,
+		   res_comprobante,
+		   res_notrx,
+		   debito,
+		   credito
+	  into _no_poliza,
+		   _cod_agente,
+		   _res_comprobante,
+		   _res_notrx,
+		   _res_db,
+		   _res_cr
+	  from tmp_cgl
+	 order by cod_agente,no_poliza
+
+
+	select no_documento
+	  into _no_documento
+	  from emipomae
+	 where no_poliza = _no_poliza;
+
+
+	select nombre,tipo_agente
+	  into _n_agente,_tipo_agente
+	  from agtagent
+	 where cod_agente = _cod_agente;
+
+   return _cod_agente,_n_agente,_no_documento,_no_poliza,_res_comprobante,_res_notrx,_res_db,_res_cr,_tipo_agente with resume;
+
+
+
+end foreach
+
+DROP TABLE tmp_cgl;
+		
+end
+end procedure

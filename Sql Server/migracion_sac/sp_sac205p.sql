@@ -1,0 +1,391 @@
+-- Consulta de Movimientos por Rango de Periodos de Cuentas Sac x Auxiliar -- Si es produccion
+-- Creado    : 21/04/2010 - Autor: Henry Giron
+-- SIS v.2.0 - DEIVID, S.A.	
+-- execute procedure sp_sac205p('sac','2011','07','2011','12')
+
+DROP PROCEDURE sp_sac205p;
+CREATE PROCEDURE sp_sac205p(a_db char(18),a_anio char(4),a_mes char(2), a_anio2 char(4),a_mes2 char(2))
+RETURNING CHAR(25),	 -- Cuenta
+		  CHAR(50),	 -- Nombre Cuenta
+		  DEC(16,2), -- Debito
+		  DEC(16,2), -- Credito
+		  CHAR(50),	 -- Compania
+		  smallint,  -- Nivel
+		  CHAR(5),	 -- Auxiliar
+		  DEC(16,2), -- Db_aux
+		  DEC(16,2), -- Cr_aux
+		  CHAR(50),	 -- name_reas
+		  CHAR(7),	 -- periodo 1
+		  CHAR(7);	 -- periodo 2
+
+DEFINE i_cuenta			char(12);
+DEFINE i_comprobante	CHAR(15);
+DEFINE i_fechatrx		DATE;
+DEFINE i_no_registro    char(10);
+DEFINE i_notrx			INTEGER;
+DEFINE i_auxiliar		CHAR(5);
+DEFINE i_debito			DEC(15,2);
+DEFINE i_credito		DEC(15,2);
+DEFINE i_origen			CHAR(15);
+DEFINE i_no_documento	CHAR(20);
+DEFINE i_no_poliza		CHAR(10);
+DEFINE i_no_endoso		CHAR(5);
+DEFINE i_no_remesa		CHAR(10);
+DEFINE i_renglon		smallint;
+DEFINE i_no_tranrec		CHAR(10);
+DEFINE _mostrar         CHAR(10);
+DEFINE _tipo            CHAR(15);
+
+DEFINE i_neto           DEC(15,2);
+DEFINE d_factura		CHAR(10);
+DEFINE d_poliza			CHAR(10);
+DEFINE d_endoso			CHAR(5);
+DEFINE d_debito			DEC(15,2);
+DEFINE d_credito		DEC(15,2);
+DEFINE d_renglon		smallint;
+DEFINE v_no_recibo      CHAR(10);
+DEFINE v_tipo_mov		CHAR(3);
+DEFINE v_nombre 		CHAR(50);
+DEFINE v_prima_bruta	DEC(16,2);
+DEFINE v_prima_neta		DEC(16,2);
+DEFINE v_impuesto		DEC(16,2);	   		   
+DEFINE v_documento		CHAR(20);
+define _cia_nom		    char(50);
+
+DEFINE v_nombre_cuenta   CHAR(50);
+DEFINE _no_poliza		 CHAR(10);
+DEFINE _no_endoso		 CHAR(5);
+define _error			integer;
+define _error_desc		char(50);
+
+define r_cod_auxiliar   char(5);
+define r_debito         DEC(16,2);
+define r_credito		DEC(16,2);
+define r_desc_rea		char(50);
+define _periodo1        char(7);
+define _periodo2        char(7);
+
+SET ISOLATION TO DIRTY READ;
+
+CREATE TEMP TABLE tmp_reaprod2(
+		cuenta			char(12),
+		comprobante		char(15),
+		fechatrx		date,
+		no_registro		CHAR(10),
+		auxiliar     	char(5),
+		debito			DEC(15,2)   default 0,
+		credito			DEC(15,2)   default 0,
+		origen          char(15),
+		no_documento	char(20),
+		no_poliza       char(10),
+		no_endoso       char(5),
+		no_remesa		char(10),
+		renglon			smallint,
+		no_tranrec		char(10),
+		notrx           integer,
+		mostrar			char(10),
+		tipo            char(15)
+		) WITH NO LOG; 	
+
+CREATE TEMP TABLE tmp_enc(
+		cuenta				CHAR(25),	 -- Cuenta
+		nombre_cuenta		CHAR(50),	 -- Nombre Cuenta
+		debito         		DEC(16,2),   -- Debito
+		credito				DEC(16,2),   -- Credito
+		cia_nom				CHAR(50),	 -- Compania
+		nivel_1_2			smallint,    -- Nivel
+		cod_auxiliar		CHAR(5),	 -- Auxiliar
+		aux_debito			DEC(16,2),   -- Db_aux
+		aux_credito			DEC(16,2),   -- Cr_aux
+		aux_desc_rea		CHAR(50),	 -- name_reas
+		periodo1			CHAR(7),	 -- periodo 1
+		periodo2			CHAR(7)	     -- periodo 2
+		) WITH NO LOG; 	
+
+CREATE TEMP TABLE tmp_det(
+		cuenta				CHAR(25),	 -- Cuenta
+		nombre_cuenta		CHAR(50),	 -- Nombre Cuenta
+		debito         		DEC(16,2),   -- Debito
+		credito				DEC(16,2),   -- Credito
+		cia_nom				CHAR(50),	 -- Compania
+		nivel_1_2			smallint,    -- Nivel
+		cod_auxiliar		CHAR(5),	 -- Auxiliar
+		aux_debito			DEC(16,2),   -- Db_aux
+		aux_credito			DEC(16,2),   -- Cr_aux
+		aux_desc_rea		CHAR(50),	 -- name_reas
+		periodo1			CHAR(7),	 -- periodo 1
+		periodo2			CHAR(7)	     -- periodo 2
+		) WITH NO LOG; 	
+
+
+let v_nombre = " ";
+let i_comprobante = a_db;
+
+select cia_nom
+  into _cia_nom
+  from sigman02
+ where cia_bda_codigo = a_db;
+
+call sp_sac181( a_db ) returning _error, _error_desc;
+
+if a_mes < 10 then
+	if  a_mes[2] is null then
+    	let  _periodo1 = a_anio||"-"||"0"||a_mes[1];
+	else
+    	let  _periodo1 =  a_anio||"-"||"0"||a_mes[2];
+	end if
+else
+	let  _periodo1 = a_anio||"-"||a_mes;
+end if
+
+if a_mes2 < 10 then
+	if  a_mes2[2] is null then
+    	let  _periodo2 = a_anio2||"-"||"0"||a_mes2[1];
+	else
+    	let  _periodo2 =  a_anio2||"-"||"0"||a_mes2[2];
+	end if
+else
+	let  _periodo2 = a_anio2||"-"||a_mes2;
+end if
+
+FOREACH 
+ SELECT no_poliza,
+        no_endoso
+   INTO _no_poliza,
+        _no_endoso
+   FROM endedmae
+  WHERE periodo >= _periodo1
+    AND periodo <= _periodo2
+--  and no_factura  = a_valor
+    AND actualizado = 1
+
+	FOREACH	
+		select b.cuenta, 
+		       sum(b.debito), 
+		       sum(b.credito)
+		  into i_cuenta,
+			   i_debito,
+			   i_credito
+		  from sac999:reacompasie b, sac999:reacomp c
+	     where b.no_registro = c.no_registro
+		   and c.tipo_registro = "1"
+		   and c.no_poliza = _no_poliza
+	       and c.no_endoso = _no_endoso
+		 group by 1
+		 order by 1
+
+			 SELECT cta_nombre
+			   INTO v_nombre_cuenta
+			   FROM tmp_cglcuentas
+			  WHERE cta_cuenta = i_cuenta ;
+
+				LET r_cod_auxiliar = '';
+				LET r_debito = 0;
+				LET r_credito = 0;
+				LET r_desc_rea = '';
+
+				INSERT INTO tmp_enc (
+				cuenta,			
+				nombre_cuenta,
+				debito,       
+				credito,			
+				cia_nom,			
+				nivel_1_2,		
+				cod_auxiliar,	
+				aux_debito,		
+				aux_credito,		
+				aux_desc_rea,	
+				periodo1,		
+				periodo2		
+				)
+				VALUES (
+				i_cuenta,		
+				v_nombre_cuenta,
+				i_debito,       
+				i_credito,      
+				_cia_nom,
+				1, 
+				r_cod_auxiliar,
+				r_debito,
+				r_credito,
+				r_desc_rea,
+				_periodo1,
+			    _periodo2
+				);
+
+
+			{RETURN i_cuenta,			
+				   v_nombre_cuenta,  
+				   i_debito,         
+				   i_credito,        
+				   _cia_nom,
+				   1, 
+				   r_cod_auxiliar,
+				   r_debito,
+				   r_credito,
+				   r_desc_rea,
+				   _periodo1,
+				   _periodo2
+				   WITH RESUME;	 }
+
+		 	FOREACH
+				select a.cod_auxiliar,t.ter_descripcion,sum(a.debito),sum(a.credito)
+				  into r_cod_auxiliar,r_desc_rea,r_debito,r_credito
+	              from sac999:reacompasiau a ,tmp_cglterceros t, sac999:reacompasie b, sac999:reacomp c
+	    	     where b.no_registro = c.no_registro
+			       and c.tipo_registro = "1"
+			       and c.no_poliza = _no_poliza
+		           and c.no_endoso = _no_endoso
+	               and a.no_registro = b.no_registro
+		           and a.cod_auxiliar = t.ter_codigo
+	               and a.cuenta = b.cuenta
+				   and a.cuenta = i_cuenta
+	      group by 1,2
+	      order by 1,2
+
+					if r_debito is null then
+						let r_debito = 0; 
+					end if
+
+					if r_credito is null then
+						let r_credito = 0; 
+					end if
+
+
+					INSERT INTO tmp_det (
+					cuenta,			
+					nombre_cuenta,
+					debito,       
+					credito,			
+					cia_nom,			
+					nivel_1_2,		
+					cod_auxiliar,	
+					aux_debito,		
+					aux_credito,		
+					aux_desc_rea,	
+					periodo1,		
+					periodo2		
+					)
+					VALUES (
+					i_cuenta,		
+					v_nombre_cuenta, 
+					0,         
+					0,        
+					_cia_nom,
+					2,
+					r_cod_auxiliar,
+					r_debito,
+					r_credito,
+					r_desc_rea,
+					_periodo1,
+				    _periodo2
+					);
+
+
+					{RETURN i_cuenta,			
+						   v_nombre_cuenta,  
+						   0,         
+						   0,        
+						   _cia_nom,
+						   2,
+						   r_cod_auxiliar,
+						   r_debito,
+						   r_credito,
+						   r_desc_rea,
+						   _periodo1,
+						   _periodo2
+						   WITH RESUME;	 	}
+			END FOREACH;  
+
+	END FOREACH;
+END FOREACH;
+
+FOREACH
+ SELECT cuenta,nombre_cuenta,cia_nom, 
+ 	    periodo1,periodo2,
+        SUM(debito), 
+        SUM(credito)
+   INTO i_cuenta,v_nombre_cuenta,_cia_nom, 
+ 	    _periodo1,_periodo2,
+        i_debito, 
+        i_credito
+   FROM tmp_enc
+  GROUP BY 1,2,3,4,5
+  ORDER BY 1,2,3,4,5
+
+		if i_debito is null then
+			let i_debito = 0; 
+		end if
+		if i_credito is null then
+			let i_credito = 0; 
+		end if
+
+		LET r_cod_auxiliar = '';
+		LET r_debito = 0;
+		LET r_credito = 0;
+		LET r_desc_rea = '';
+
+
+		RETURN i_cuenta,			
+			   v_nombre_cuenta,  
+			   i_debito,         
+			   i_credito,        
+			   _cia_nom,
+			   1, 
+			   r_cod_auxiliar,
+			   r_debito,
+			   r_credito,
+			   r_desc_rea,
+			   _periodo1,
+			   _periodo2
+			   WITH RESUME;	  		
+
+		FOREACH
+			 SELECT cod_auxiliar,
+			 		aux_desc_rea,
+			        SUM(aux_debito), 
+			        SUM(aux_credito)
+			   INTO r_cod_auxiliar,
+					r_desc_rea,
+					r_debito,
+					r_credito
+			   FROM tmp_det
+			  where cuenta = i_cuenta
+			  GROUP BY 1,2
+			  ORDER BY 1,2
+
+			if r_debito is null then
+				let r_debito = 0; 
+			end if
+
+			if r_credito is null then
+				let r_credito = 0; 
+			end if
+
+			RETURN i_cuenta,			
+				   v_nombre_cuenta,  
+				   0,         
+				   0,        
+				   _cia_nom,
+				   2,
+				   r_cod_auxiliar,
+				   r_debito,
+				   r_credito,
+				   r_desc_rea,
+				   _periodo1,
+				   _periodo2
+				   WITH RESUME;	 		
+
+		 END FOREACH;
+END FOREACH;
+
+
+  
+DROP TABLE tmp_reaprod2;
+DROP TABLE tmp_cglcuentas;
+DROP TABLE tmp_cglterceros;
+
+
+
+END PROCEDURE					 
+

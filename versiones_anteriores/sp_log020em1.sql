@@ -1,0 +1,63 @@
+-- pool impresion de renovacion automatica
+-- Creado		: 18/05/2009	- Autor: Henry Giron.
+-- Modifciado	: 07/02/2012	- Autor: Roman Gordon	**Se Agrego al acreedor para aplicarlo al ordenamiento del datawindow
+-- Modifciado	: 04/12/2012	- Autor: Roman Gordon	**Se Agrego el campo de leasing 
+
+drop procedure sp_log020em1;
+create procedure "informix".sp_log020em1(a_sucursal char(350), a_estatus smallint,a_desde date,a_hasta date,a_acreedor char(5))
+	returning 	char(20) as no_documento,
+				varchar(50) as n_ramo, 
+				char(10) as no_factura,
+				varchar(100) as n_cliente,
+				varchar(50) as cedula,
+				varchar(50) as n_corredor,
+				varchar(50) as tipo_endoso;
+
+define _no_documento		char(20); 
+define _n_ramo      	    varchar(50);
+define _no_factura			char(10); 
+define _n_cliente       	varchar(100);
+define _cedula     	        varchar(50);
+define _n_corredor      	varchar(50);
+define _tipo_endoso      	varchar(50);
+define v_filtros       	    varchar(255);
+
+
+call sp_log020em(a_sucursal, a_estatus ,a_desde,a_hasta) returning v_filtros;
+
+set isolation to dirty read;
+
+--set debug file to "sp_pro856.trc";
+--trace on;
+
+foreach
+select  no_documento,   
+		n_ramo,
+		no_factura,   
+		n_cliente,
+		cedula,
+		n_corredor,
+		tipo_endoso
+	into  _no_documento,   
+		_n_ramo,
+		_no_factura,   
+		_n_cliente,
+		_cedula,
+		_n_corredor,
+		_tipo_endoso
+	from temp_acreedor	
+   where cod_acreedor = a_acreedor	
+	order by n_ramo,n_cliente
+	
+		return   _no_documento,   
+			_n_ramo,
+			_no_factura,   
+			_n_cliente,
+			_cedula,
+			_n_corredor,
+			_tipo_endoso		
+			with resume;
+end foreach
+
+
+end procedure	

@@ -1,0 +1,25 @@
+-- Procedimiento para actualizar los valores de las primas en emipocob
+--
+-- Creado    : 17/05/2013 - Autor: Federico Coronado.
+--
+-- SIS v.2.0 - DEIVID, S.A.
+
+--DROP PROCEDURE sp_proe01;
+CREATE PROCEDURE "informix".sp_proe01(a_poliza CHAR(10), a_unidad CHAR(5), a_cia CHAR(3))
+			RETURNING   SMALLINT			 -- _error
+						
+
+DEFINE _error		  INTEGER;
+DEFINE ls_cobertura   CHAR(5);	
+DEFINE ls_unidad   	  CHAR(5);	
+DEFINE ls_producto    CHAR(5);	
+DEFINE ls_ramo        CHAR(3);
+
+
+SET ISOLATION TO DIRTY READ;
+
+--SET DEBUG FILE TO "sp_proe01.trc";      
+--TRACE ON;                                                                     
+
+LET ld_factor_vigencia = 1.000000;
+end procedure

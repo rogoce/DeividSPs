@@ -1,0 +1,390 @@
+--***********************************************************************************
+-- Procedimiento que genera la Bonificacion de Rentabilidad por corredores
+--***********************************************************************************
+-- Este es el procedimiento realiza el pase a charenta NEGOCIO 2011 - Realizado: 23/01/2012 Henry Giron	 
+-- execute procedure sp_che94_2011("001","001","2011-12","HGIRON")
+-- Creado    : 28/01/2009 - Autor: Henry Giron
+-- Ultima Modificacion: 23/01/2012 - Autor: Henry Giron
+-- SIS v.2.0 - DEIVID, S.A.
+DROP PROCEDURE sp_che94_2011prueba;
+CREATE PROCEDURE sp_che94_2011prueba(
+a_cia               CHAR(3),
+a_sucursal          CHAR(3),
+a_periodo           CHAR(7),  
+a_usuario           CHAR(8))
+--RETURNING CHAR(50),CHAR(100),CHAR(5),CHAR(50),CHAR(1),DEC(16,2),DEC(16,2),DEC(16,2),DEC(16,2),DEC(16,2),DEC(16,2),DEC(16,2),DEC(16,2),DEC(16,2),DEC(16,2),DEC(16,2),DEC(16,2);
+RETURNING SMALLINT,CHAR(50);
+
+DEFINE v_nombre_cia      	CHAR(50);
+DEFINE _TotProdAnt       	DEC(16,2);
+DEFINE _TotProdAct       	DEC(16,2);
+DEFINE _cod_agente       	CHAR(5);  
+DEFINE _cod_ramo         	CHAR(3); 
+DEFINE _n_agente         	CHAR(50); 
+DEFINE _nombre_agente    	CHAR(100); 
+DEFINE _nombre_cliente   	CHAR(100); 
+DEFINE _cod_tipo		 	CHAR(3);
+DEFINE _nombre_tipo      	CHAR(50);
+DEFINE _nombre_ramo      	CHAR(50);
+DEFINE _ProdAntRam       	DEC(16,2);
+DEFINE _ProdActRam       	DEC(16,2);
+DEFINE _ProducMin        	DEC(16,2);
+DEFINE _crecimiento		 	DEC(16,2);
+DEFINE _Porc_crec    	 	DEC(16,2);
+DEFINE _n_cliente 	     	CHAR(100); 
+DEFINE _no_documento     	CHAR(20); 
+DEFINE _prima_aa    	 	DEC(16,2);
+DEFINE _monto_90    	 	DEC(16,2);
+DEFINE _liberacion_ap  	 	DEC(16,2);
+DEFINE _sini	    	 	DEC(16,2);
+DEFINE _prima_exc_m90    	DEC(16,2);
+DEFINE _reserva	    	 	DEC(16,2);
+DEFINE _porc_res_mat   	 	DEC(16,2);
+DEFINE _prima_aplica   	 	DEC(16,2);
+DEFINE _prima_ant   	 	DEC(16,2);
+DEFINE _siniestralidad 	 	DEC(16,2);
+DEFINE _porcentaje   	 	DEC(16,2);
+DEFINE _valor_prima   	 	DEC(16,2);
+DEFINE _Ramo_crec 		 	DEC(16,2);
+DEFINE _Ramo_Porc_crec 	 	DEC(16,2);
+DEFINE _porc_prima_dev_max	DEC(16,2);
+DEFINE _pri_dev_max_aa		DEC(16,2);
+DEFINE _pri_dev_max_ap		DEC(16,2);
+DEFINE _prim_suscrita_min 	DEC(16,2);
+DEFINE _crecimiento_min   	DEC(16,2);
+DEFINE _pri_susc_dev_aa  	DEC(16,2);
+DEFINE _pri_susc_dev_ap  	DEC(16,2); 
+DEFINE _cod_contratante		CHAR(10); 
+DEFINE _no_poliza		    CHAR(10); 
+DEFINE _vigenteaa           DATE; 
+DEFINE _vigenteap           DATE; 
+DEFINE _cod_ramo_2			CHAR(3);
+DEFINE _beneficio_2		    DEC(16,2);
+DEFINE _pri_susc_aa_2		DEC(16,2);
+DEFINE _pri_susc_ap_2		DEC(16,2);
+DEFINE _sini_inc_2			DEC(16,2);
+DEFINE _pri_susc_dev_aa_2	DEC(16,2);
+DEFINE _pri_susc_dev_ap_2	DEC(16,2);
+DEFINE _pri_dev_max_aa_2	DEC(16,2);
+DEFINE _pri_dev_max_ap_2	DEC(16,2);
+DEFINE _prima_aplica_ramo 	DEC(16,2);
+DEFINE _reserva_aa_ramo    	DEC(16,2);
+DEFINE _liberacion_ap_ramo  DEC(16,2);
+DEFINE _nombre_ramo_2      	CHAR(50);
+DEFINE _crecimiento_2	 	DEC(16,2);
+DEFINE _Porc_crec_2    	 	DEC(16,2);
+DEFINE _siniestralidad_2 	DEC(16,2);
+DEFINE _valor_prima_2  	 	DEC(16,2);
+DEFINE _cod_vendedor	    CHAR(3);
+DEFINE _nombre_vendedor	    CHAR(50);
+DEFINE _cod_agencia		    CHAR(3);
+DEFINE _suc_promotoria	    CHAR(3);
+DEFINE _cod_subramo         CHAR(3);  
+DEFINE _acum_prima	        DEC(16,2);
+DEFINE _acum_bono		    DEC(16,2);
+
+--SET DEBUG FILE TO "che95c.trc";
+--TRACE ON;
+--DROP TABLE tmpche95c ;
+
+SET ISOLATION TO DIRTY READ;
+
+CREATE TEMP TABLE tmppase2011
+	(cia                CHAR(50),
+	asegurado			CHAR(100),
+	poliza				CHAR(20),
+	prima_suscrita		DEC(16,2),
+	monto_90			DEC(16,2),
+	prima_exc_monto90	DEC(16,2),
+	reserva				DEC(16,2),
+	prima_exc_reserva	DEC(16,2),
+	siniestro			DEC(16,2),
+	categoria			CHAR(50),
+	ramo				CHAR(50),	
+	agente				CHAR(100),
+	cod_tipo			CHAR(3),
+	cod_agente			CHAR(5),
+	prima_ant   		DEC(16,2),
+	liberacion_ap       DEC(16,2))
+	WITH NO LOG;
+
+CREATE TEMP TABLE chqrenta2011
+	(cia                CHAR(50),	   	 
+	periodo             CHAR(7),		 
+	no_documento        CHAR(20),		 	
+	cod_agente          CHAR(5),		 
+	n_agente			CHAR(100),		 
+	tipo                CHAR(3),		 
+	nombre_ramo			CHAR(50),		 
+	pri_sus_pag_ap		DEC(16,2),		 
+	pri_sus_pag_aa		DEC(16,2),		 
+	n_cliente			CHAR(100),		 
+	cod_ramo			CHAR(3),		 
+	monto_90_aa			DEC(16,2),		 
+	sini_inc			DEC(16,2),		 
+	pri_susc_dev_aa  	DEC(16,2),
+	pri_susc_dev_ap  	DEC(16,2))
+	WITH NO LOG;
+
+let v_nombre_cia   = sp_sis01(a_cia); 
+let _crecimiento   = 0;
+let _Porc_crec     = 100;
+let _liberacion_ap = 0;
+let _valor_prima_2 = 0;
+let _reserva       = 0;
+
+FOREACH
+	select trim(cod_agente),
+	       trim(n_agente),
+	       tipo,
+	       trim(n_cliente),
+		   trim(cod_ramo),
+		   nombre_ramo,
+	       trim(no_documento),
+	       pri_susc_aa,
+	       monto_90,
+		   sini_inc,
+	       pri_susc_ap,
+		   pri_susc_dev_aa,
+		   pri_susc_dev_ap
+	  into _cod_agente,
+	       _n_agente,
+	       _cod_tipo,
+		   _n_cliente,
+		   _cod_ramo,
+		   _nombre_ramo,
+		   _no_documento,
+		   _prima_aa,  		 --PRIMA SUSCRITA AA
+		   _monto_90,
+		   _sini,
+		   _prima_ant,
+		   _pri_susc_dev_aa,
+		   _pri_susc_dev_ap  --PRIMA NETA COBRADA DEVENGADA
+	  from rentabilidad1 
+	 where periodo  = a_periodo
+	   and monto_90 = 0
+	   and cod_agente = '00006'
+	 order by 1,2,3,4,5,6,7,8 desc
+
+	if  _prima_aa is null or _prima_aa = 0 then
+		let _prima_aa = 0;
+	end if
+	
+	let _prima_exc_m90 = _prima_aa;
+
+	if  _monto_90 is null then
+		let _monto_90 = 0;
+	end if
+    if _prima_exc_m90 is null then
+		let _prima_exc_m90 = 0;
+	end if
+	if  _sini is null or _sini = 0 then
+		let _sini = 0;
+	end if
+	
+	let _prima_aplica = _pri_susc_dev_ap;
+
+	let _nombre_agente = trim(_n_agente)||" "||_cod_agente;
+	let _nombre_cliente = trim(_n_cliente);
+
+	select trim(name_tipo)
+	  into _nombre_tipo
+	  from prdrenttipo 
+	 where periodo  = a_periodo
+	   and cod_tipo = _cod_tipo 
+	   and activo   = 1 ;					
+
+	if  _prima_aplica is null or _prima_aplica = 0 then
+		let _prima_aplica = 0;
+	end if
+
+	insert into tmppase2011(cia,asegurado,poliza,prima_suscrita,monto_90,prima_exc_monto90,reserva,prima_exc_reserva,siniestro,categoria,ramo,agente,cod_tipo,cod_agente,prima_ant,liberacion_ap)
+	values (v_nombre_cia,_nombre_cliente,_no_documento,_prima_aa,_monto_90,_prima_exc_m90,_reserva,_prima_aplica,_sini,_nombre_tipo,_nombre_ramo,_nombre_agente,_cod_tipo,_cod_agente,_prima_ant,_liberacion_ap);			 
+
+	let _no_poliza = sp_sis21(_no_documento);
+
+	select cod_contratante, 
+		   vigencia_final, 
+		   vigencia_inic, 
+		   cod_ramo,
+		   sucursal_origen,
+		   cod_subramo 
+      into _cod_contratante, 
+		   _vigenteaa, 
+		   _vigenteap, 
+		   _cod_ramo,
+		   _cod_agencia,
+		   _cod_subramo 
+      from emipomae 
+     where no_poliza = _no_poliza;  
+
+	-- Informacion Necesaria para las Promotorias
+	select sucursal_promotoria
+	  into _suc_promotoria
+	  from insagen
+	 where codigo_agencia = _cod_agencia;
+
+	select cod_vendedor
+	  into _cod_vendedor
+	  from parpromo
+	 where cod_agente  = _cod_agente
+	   and cod_agencia = _suc_promotoria
+	   and cod_ramo	   = _cod_ramo;
+
+	select nombre
+	  into _nombre_vendedor
+	  from agtvende
+	 where cod_vendedor = _cod_vendedor;
+
+END FOREACH
+
+FOREACH
+	select cia,agente,cod_agente,categoria,cod_tipo,sum(prima_suscrita),sum(monto_90),sum(prima_exc_monto90),sum(reserva),sum(prima_exc_reserva),sum(siniestro),sum(prima_ant),sum(liberacion_ap)
+	  into v_nombre_cia,_nombre_agente,_cod_agente,_nombre_tipo,_cod_tipo,_prima_aa,_monto_90,_prima_exc_m90,_reserva,_prima_aplica,_sini,_prima_ant,_liberacion_ap
+	  from tmppase2011 
+	 group by 1,2,3,4,5
+	 order by 1,2,3,4,5,6 desc
+
+	let _crecimiento    = 0;
+	let _Porc_crec      = 0;
+	let _Ramo_crec 		= 0;
+	let _Ramo_Porc_crec = 0; 
+
+	if _prima_ant is null or _prima_ant <= 0 then 
+		if _prima_aa = 0 then
+			let _crecimiento = 0;
+			let _Porc_crec   = 0;
+		else
+			let _crecimiento = _prima_aa;
+			let _Porc_crec   = 100;
+		end if
+	else
+		let _crecimiento = _prima_aa - _prima_ant ;
+		let _Porc_crec   = (_crecimiento / _prima_ant) * 100;
+	end if
+
+	let _porcentaje   = 0;
+    --************************************************
+    --    Calculos % de siniestralidad
+    --************************************************
+	let _siniestralidad = 0;
+	if _prima_aplica <> 0 then
+		let _siniestralidad = (_sini / _prima_aplica) * 100;
+	else
+		continue foreach;
+	end if		
+
+	select prim_suscrita_min,
+		   crecimiento_min,
+	       porc_prima_dev_max
+	  into _prim_suscrita_min,
+	       _crecimiento_min,
+	       _porc_prima_dev_max  
+	  from prdrenttipo 
+	 where periodo  = a_periodo
+	   and cod_tipo = _cod_tipo 
+	   and activo   = 1;
+
+	if _prima_aa >= _prim_suscrita_min then
+		if _Porc_crec >= _crecimiento_min then
+
+			let _porcentaje = 0; 
+
+			select beneficio 
+			  into _porcentaje
+			  from prdrenttsin
+			 where periodo  = a_periodo
+			   and cod_tipo = _cod_tipo
+			   and round(_siniestralidad,0) between rango_inicial and rango_final;
+
+			if _porcentaje is null then
+			   let _porcentaje = 0; 
+			end if
+		end if		
+	end if		
+
+	let _valor_prima = 0;																																		         
+	if _porcentaje <> 0 then	
+		let _valor_prima = _prima_aplica * ( _porcentaje / 100);
+		let _acum_prima = 0;
+		let _acum_bono	= 0;
+
+		update rentabilidad1
+		   set bono       = _valor_prima,
+		       beneficio  = _porcentaje,
+			   aplica     = 1
+		 where cod_agente =	_cod_agente
+		   and tipo		  =	_cod_tipo
+		   and periodo    = a_periodo;
+
+		foreach
+			select cod_ramo,nombre_ramo,
+				   beneficio,
+				   sum(pri_susc_aa),
+				   sum(pri_susc_ap),
+				   sum(sini_inc),
+				   sum(pri_susc_dev_aa),
+				   sum(pri_susc_dev_ap),
+				   sum(pri_dev_max_aa),
+				   sum(pri_dev_max_ap)
+			  into _cod_ramo_2,_nombre_ramo_2,
+				   _beneficio_2,
+			       _pri_susc_aa_2,
+				   _pri_susc_ap_2,
+				   _sini_inc_2,
+				   _pri_susc_dev_aa_2,
+				   _pri_susc_dev_ap_2,
+				   _pri_dev_max_aa_2,
+  				   _pri_dev_max_ap_2
+			  from rentabilidad1
+			 where periodo = a_periodo
+		       and cod_agente = _cod_agente
+			   and monto_90 = 0  
+			   and tipo = _cod_tipo
+			   and beneficio <> 0
+			 group by beneficio , cod_ramo , nombre_ramo
+			 order by beneficio , cod_ramo , nombre_ramo
+
+				   --LET _reserva_aa_ramo    	= _pri_susc_aa_2 - _pri_susc_dev_aa_2;
+				   --LET _liberacion_ap_ramo 	= _pri_susc_ap_2 - _pri_susc_dev_ap_2;
+				   LET _prima_aplica_ramo 	= _pri_susc_dev_ap_2; --_pri_susc_aa_2 - _reserva_aa_ramo + _liberacion_ap_ramo;
+				   LET _valor_prima_2       = _prima_aplica_ramo * ( _beneficio_2 / 100);
+
+				   let _acum_prima = _acum_prima + _prima_aplica_ramo;
+				   let _acum_bono  = _acum_bono  + _valor_prima_2;
+
+				   let _crecimiento_2    = 0;
+				   let _Porc_crec_2      = 0;
+				   let _siniestralidad_2 = 0; 
+
+				   if  _pri_susc_ap_2 is null or _pri_susc_ap_2 = 0 then
+				   	let _crecimiento_2 = _pri_susc_aa_2;
+				   	let _Porc_crec_2   = 100;
+				   else
+				   	let _crecimiento_2 = _pri_susc_aa_2 - _pri_susc_ap_2 ;
+				   	let _Porc_crec_2   = (_crecimiento_2 / _prima_ant) * 100;
+				   end if
+				    let _siniestralidad_2 = 0;
+
+				    if _prima_aplica_ramo <> 0 then
+				       let _siniestralidad_2 = (_sini_inc_2 / _prima_aplica_ramo) * 100;
+				    else
+				       let _siniestralidad_2 = 0;
+			        end if							
+
+			INSERT INTO chqrenta3(
+			cod_agente,prima_neta,comision,nombre,seleccionado,periodo,fecha_genera,cod_ramo,
+			porcentaje,por_cre,por_sin,prima_ap,nombre_ramo,
+			nombre_tipo_g,tipo_g,prima_neta_g,comision_g,porcentaje_g,por_cre_g,por_sin_g,prima_ap_g,sini_g,sini )
+			VALUES (
+			_cod_agente,_prima_aplica_ramo,_valor_prima_2,_nombre_agente,0,a_periodo,current,_cod_ramo_2,
+			_beneficio_2,_Porc_crec_2,_siniestralidad_2,_pri_susc_ap_2, _nombre_ramo_2,
+			_nombre_tipo,_cod_tipo,_prima_aplica,_valor_prima,_porcentaje,_Porc_crec,_siniestralidad,_prima_ant,_sini,_sini_inc_2);
+
+		end foreach
+	end if
+END FOREACH
+DROP TABLE tmppase2011;
+DROP TABLE chqrenta2011;
+return 0, "Actualizacion Exitosa ...";
+END PROCEDURE;

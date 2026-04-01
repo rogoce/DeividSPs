@@ -1,0 +1,685 @@
+--DROP procedure sp_pro04_2;
+--DROP procedure sp_pro04_1;
+-- Modificado: 25/04/2019 - HGIRON CASO: 31242 
+drop procedure sp_pro63a_a;
+{
+create procedure "informix".sp_pro63a_a(
+a_compania		char(3),
+a_agencia		char(255)	default "*",
+a_periodo		date,
+a_codsucursal	char(255)	default "*",
+a_codramo		char(255)	default "*",
+a_fecha         date, a_serie char(255) default "*")
+
+
+returning	varchar(50),	--1. v_rango_inicial
+			integer,	--3. tot_cant
+			dec(16,2),	--4. v_prima_suscrita
+			dec(16,2),	--5. v_prima_retenida
+			integer,	--6. v_unidades
+			char(3),	--7. v_codramo
+			char(45),	--8. v_desc_ramo
+			date,		--9. a_periodo
+			char(45),	--10. descr_cia
+			char(255),	--11. v_filtros
+			dec(16,2),	--12. v_suma_asegurada / v_unidades
+			dec(16,2),	--13. v_suma_asegurada
+			dec(16,2),	--14. _prima_ret_casco
+			dec(16,2),	--15. _prima_cont
+			dec(16,2),	--16. _sum_retencion
+			dec(16,2),	--17. _sum_ret_casco
+			dec(16,2),	--18. _suma_fac
+			dec(16,2),	--19. _suma_fac_car
+			dec(16,2),	--20. _sum_cont
+            dec(16,2);
+			
+}
+CREATE procedure "informix".sp_pro63a_a(a_cia CHAR(3),a_agencia CHAR(3),a_codsucursal CHAR(255) DEFAULT "*",a_periodo DATE, a_cod_ramo CHAR(255) DEFAULT "*", a_codcliente CHAR(255) DEFAULT "*" ,a_subramo CHAR(255) DEFAULT "*", a_no_documento CHAR(255) DEFAULT "*")
+RETURNING CHAR(50), 	 --cia
+		  CHAR(03),		 --cod_ramo
+		  CHAR(50),		 --descr. ramo
+		  CHAR(50),		 --descr. cliente
+          CHAR(20),		 --poliza
+          DATE,			 --vig ini
+          DATE,			 --vig fin
+          DECIMAL(16,2), --prima suscrita
+          DATE,			 --fecha
+          DECIMAL(16,2), --suma asegurada
+          CHAR(255),	 --v_filtros
+          DECIMAL(16,2), --suma asegurada
+          DECIMAL(16,2), --prima
+		  CHAR(5),
+		  CHAR(50),
+		  CHAR(50),char(5),char(30);
+			
+--------------------------------------------
+---  PERFIL DE CARTERA - RAMOS AUTOMOVIL   ---
+---            POLIZAS VIGENTES            ---
+---  EXCLUYENDO COASEGUROS Y CONTRATOS
+---  Yinia M. Zamora - agosto 2000 - YMZM
+---  Ref. Power Builder - d_prod_sp_pro04
+----------------------------------------------
+
+define v_filtros		char(255);
+--define v_desc_ramo		char(45);
+define descr_cia		char(45);
+define v_nodocumento	char(20);
+define _no_poliza		char(10);
+define _cod_contrato	char(5);
+define _no_endoso		char(5);
+define _cod_cober_reas	char(3);
+define v_codsubramo		char(3);
+define v_codsucursal	char(3);
+define v_codramo		char(3);
+define _tipo			char(1);
+define _prima_ret_casco	dec(16,2);
+define v_prima_suscrita	dec(16,2);
+define v_prima_retenida	dec(16,2);
+define v_suma_asegurada	dec(16,2); --integer; --dec(16,2);
+define v_rango_inicial	dec(16,2);
+define _prima_suscrita	dec(16,2);
+define _prima_retenida	dec(16,2);
+define _suma_asegurada	dec(16,2);
+define _sum_retencion	dec(16,2);
+define _sum_ret_casco	dec(16,2);
+define _suma_aseg_end	dec(16,2);
+define _suma_fac_car	dec(16,2);
+define v_rango_final	dec(16,2);
+define suma_compara		integer;
+define _prima_cont		dec(16,2);
+define _sum_cont		dec(16,2);
+define _suma_fac		dec(16,2);
+define _rango_min		dec(16,2);
+define _prima			dec(16,2);
+define v_seleccionado	smallint;
+define _tipo_contrato	smallint;
+define v_cant_polizas	integer;
+define v_unidades		integer;
+define rango_max		dec(16,2);
+define unidades1		integer;
+define unidades2		integer;
+define tot_cant			integer;
+define v_fecha_cancel	date;
+define _no_unidad       char(5);
+define v_unidades2      bigint;
+define v_prima_cobrada  dec(16,2);
+define _code_pais       char(3);
+define _code_provincia  char(2);
+define _cod_ubica       char(3);
+define _cod_asegurado   char(10);
+define _orden           smallint;
+define _prima_cobrada   dec(16,2);
+define v_ubicacion			varchar(50);
+DEFINE _cod_traspaso	 CHAR(5);
+DEFINE _serie,_serie1	 SMALLINT;
+DEFINE _desc_contrato    CHAR(50);
+DEFINE _traspaso		 SMALLINT;
+define _excluir          smallint;
+DEFINE v_desc_cliente               CHAR(45);
+DEFINE v_contratante          		CHAR(10);
+
+DEFINE v_desc_ramo, v_descr_cia, v_desc_contrato CHAR(50);
+DEFINE v_desc_subramo                           CHAR(50);
+DEFINE _cod_ramo, _cod_subramo			 		CHAR(3);
+define _cod_grupo			char(5);
+define _n_grupo			    char(30);
+DEFINE v_vigencia_inic,v_vigencia_final  		DATE;
+
+--SET DEBUG FILE TO "sp_pro04bk.trc"; 
+
+
+create temp table temp_polizav
+	(cod_ramo		char(03),
+	cod_sucursal	char(03),
+	cod_ubica   	char(03),
+	prima_suscrita	dec(16,2),
+	prima_retenida	dec(16,2),
+	prima_ret_casco	dec(16,2),
+	prima_contrato	dec(16,2),
+	suma_retencion	dec(16,2),
+	suma_ret_casco	dec(16,2),
+	suma_ret_cont	dec(16,2),
+	suma_facult		dec(16,2),
+	suma_fac_car	dec(16,2),
+	unidades		integer,
+	seleccionado	smallint default 1,
+	suma_asegurada	dec(16,2),	
+	orden           smallint,
+	prima_cobrada   dec(16,2),
+primary key (cod_ramo,cod_ubica)) with no log;
+
+create temp table temp_cant
+	(no_documento	char(20),
+	no_unidad       char(5),
+	cod_ramo		char(3),
+	cod_sucursal	char(3),
+	cod_ubica   	char(03),
+	cant_polizas	int,
+	seleccionado	smallint default 1,
+primary key (no_documento, no_unidad,cod_ramo,cod_ubica)) with no log;
+
+create temp table temp_poliza
+	(no_poliza		char(10),
+	no_unidad       char(5),
+	cod_ubica       char(3),
+	no_documento	char(20),
+	cod_ramo		char(3),
+	cod_sucursal	char(3),
+	suma_asegurada	dec(16,2) default 0.00,
+	prima_suscrita	dec(16,2) default 0.00,
+	prima_retenida	dec(16,2) default 0.00,
+	prima_ret_casco	dec(16,2) default 0.00,
+	prima_contrato	dec(16,2) default 0.00,
+	suma_retencion	dec(16,2) default 0.00,
+	suma_ret_casco	dec(16,2) default 0.00,
+	suma_ret_cont	dec(16,2) default 0.00,
+	suma_facult		dec(16,2) default 0.00,
+	suma_fac_car	dec(16,2) default 0.00,
+	unidades		integer,
+				serie 			 SMALLINT,
+                cod_contrato     CHAR(5),
+				desc_contrato    CHAR(50),
+                cod_cobertura    CHAR(3),				
+				seleccionado	smallint default 1, 
+				codsubramo char(3),
+				vigencia_inic DATE,
+				vigencia_final  DATE,
+primary key (no_poliza, no_unidad)) with no log;
+
+create temp table temp_prima
+	(no_documento	char(20),
+	prima_cobrada   dec(16,2),
+	leido	        smallint default 0,
+primary key (no_documento)) with no log;
+	  
+let v_codsucursal		= null;
+let v_desc_ramo			= null;
+let _no_poliza			= null;
+let v_codramo			= null;
+let v_filtros			= null;
+let descr_cia			= null;
+let v_prima_retenida	= 0.00;
+let _prima_ret_casco	= 0.00;
+let v_prima_suscrita	= 0.00;
+let _prima_suscrita 	= 0.00;
+let _prima_retenida		= 0.00;
+let _sum_ret_casco		= 0.00;
+let _sum_retencion		= 0.00;
+let _suma_fac_car		= 0.00;
+let _prima_cont			= 0.00;
+let _sum_cont			= 0.00;
+let _suma_fac			= 0.00;
+let v_rango_inicial		= 0;
+let v_seleccionado		= 1;
+let v_cant_polizas		= 0;
+let v_rango_final		= 0;
+let v_unidades			= 0;
+let unidades1			= 0;
+let unidades2			= 0;
+let tot_cant			= 0;
+
+set isolation to dirty read;
+ 
+let v_descr_cia = sp_sis01(a_cia);
+
+LET v_filtros =  'Ramo 001,003,006,010,011,012,013,014,021,022;';
+let a_cod_ramo = '001,003,006,010,011,012,013,014,021,022;';
+
+--call sp_pro83(a_cia,a_agencia,a_periodo,a_cod_ramo) returning v_filtros;
+--LET v_filtros = sp_pro03(a_cia,a_agencia,a_periodo,a_cod_ramo);
+
+
+if a_codsucursal <> "*" then
+	let v_filtros = trim(v_filtros) ||"Sucursal "||trim(a_codsucursal);
+	let _tipo = sp_sis04(a_codsucursal); -- separa los valores del string
+
+	if _tipo <> "E" then -- incluir los registros
+		update temp_perfil
+		   set seleccionado = 0
+		 where seleccionado = 1
+		   and cod_sucursal not in(select codigo from tmp_codigos);
+	else
+		update temp_perfil
+		   set seleccionado = 0
+		 where seleccionado = 1
+		   and cod_sucursal in(select codigo from tmp_codigos);
+	end if
+	drop table tmp_codigos;
+end if
+
+foreach with hold
+	select y.no_poliza,
+	--	   y.no_endoso,
+		   y.no_documento,
+		   y.cod_sucursal,
+		   y.cod_ramo,
+		   y.cod_subramo,
+           y_vigencia_inic,
+           y_vigencia_final,		   
+		   y.suma_asegurada,
+		    y.cod_contratante
+	  into _no_poliza,
+	--	   _no_endoso,
+		   v_nodocumento,
+		   v_codsucursal,
+		   v_codramo,
+		   v_codsubramo,
+		   v_vigencia_inic,
+		   v_vigencia_final,		   
+		   v_suma_asegurada,v_contratante
+	  from temp_perfil y,emitipro z
+	 where y.seleccionado  = 1
+	   and y.cod_tipoprod  = z.cod_tipoprod
+	   and z.tipo_produccion  in (1,4)
+	 --  and y.cod_grupo not in ('00069', '00081', '00056', '00060', '00051')
+	   
+
+		let _excluir = 0;     --- SD403# OMAR correo 13/04/2021 excluir BHN
+		SELECT count(*) 
+		  into _excluir 
+		  FROM polexcluir
+		 where no_documento = v_nodocumento;
+
+		if  _excluir is null  then
+		    let _excluir = 0;
+		end if
+
+		if  _excluir <> 0 then
+			continue foreach;
+		end if	   
+	   
+	   SELECT COUNT(no_unidad)
+         INTO v_unidades
+         FROM emipouni
+        WHERE no_poliza = _no_poliza;
+
+	
+	let v_prima_retenida	= 0.00;
+	let _prima_ret_casco	= 0.00;
+	let v_prima_suscrita	= 0.00;
+	let _prima_suscrita 	= 0.00;
+	let _prima_retenida		= 0.00;
+	let _suma_aseg_end		= 0.00;
+	let _sum_ret_casco		= 0.00;
+	let _sum_retencion		= 0.00;
+	let _suma_fac_car		= 0.00;
+	let _prima_cont			= 0.00;
+	let _sum_cont			= 0.00;
+	let _suma_fac			= 0.00;
+	
+	let v_prima_cobrada  	= 0.00;
+
+    foreach		 
+		select no_unidad, cod_asegurado  --, prima_suscrita, suma_asegurada		  
+		  into _no_unidad, _cod_asegurado --, _prima_suscrita, _suma_aseg_end
+		  from emipouni
+		 where no_poliza = _no_poliza
+		 
+		select code_pais, 
+		       code_provincia
+		  into _code_pais,
+		       _code_provincia
+		  from cliclien
+		 where cod_cliente = _cod_asegurado;
+		 
+		select cod_ubica
+		  into _cod_ubica
+		  from genprov
+		 where code_pais = _code_pais
+		   and code_provincia = _code_provincia;
+		
+		foreach 
+			select a.no_endoso
+			  into _no_endoso
+			  from endedmae a
+			 where a.no_poliza = _no_poliza
+			   and a.fecha_emision <= a_periodo
+			
+			select b.prima_suscrita, b.suma_asegurada
+              into _prima_suscrita, _suma_aseg_end
+              from endeduni b  
+             where b.no_poliza = _no_poliza
+			   and b.no_endoso = _no_endoso
+			   and b.no_unidad = _no_unidad;
+
+			if _suma_aseg_end is null then
+				let _suma_aseg_end = 0;
+			end if
+			   
+			let v_suma_asegurada = 0.00;					
+			   
+			foreach
+				select cod_cober_reas,
+					   cod_contrato,
+					   prima,
+					   suma_asegurada
+				  into _cod_cober_reas,
+					   _cod_contrato,
+					   _prima,
+					   _suma_asegurada
+				  from emifacon
+				 where no_poliza = _no_poliza
+				   and no_endoso = _no_endoso
+				   and no_unidad = _no_unidad
+				
+				{select tipo_contrato
+				  into _tipo_contrato
+				  from reacomae
+				 where cod_contrato = _cod_contrato;}
+				 
+				select traspaso
+				  into _traspaso
+				  from reacocob
+				 where cod_contrato   = _cod_contrato
+				   and cod_cober_reas = _cod_cober_reas;
+
+				Select cod_traspaso,
+					   tipo_contrato,
+					   serie
+				  Into _cod_traspaso,
+					   _tipo_contrato,
+					   _serie
+				  From reacomae
+				 Where cod_contrato = _cod_contrato;
+
+				if _traspaso = 1 then
+					let _cod_contrato = _cod_traspaso;
+				end if
+
+		        SELECT nombre,
+				       serie
+		          INTO _desc_contrato,
+				       _serie
+		          FROM reacomae
+		         WHERE cod_contrato = _cod_contrato;				 
+				 
+
+				if _tipo_contrato = 1 then
+					if _cod_cober_reas in('002','033') then
+						let _prima_retenida = _prima_retenida + _prima; 		--Prima Retenida RC
+						let _sum_retencion = _sum_retencion + _suma_asegurada; 	--Suma Aseg Retenida RC
+					else
+						let _prima_ret_casco = _prima_ret_casco + _prima;	--Prima Retenida Casco
+						let _sum_ret_casco = _sum_ret_casco + _suma_asegurada;
+					end if
+				elif _tipo_contrato = 3 then	--Facultativo
+					--let _prima_fac = _prima_fac + _prima;
+					let _suma_fac = _suma_fac + _suma_asegurada;
+				else
+					if _cod_contrato = "00574" or _cod_contrato = "00584" or _cod_contrato = "00594" or _cod_contrato = "00604" then
+					   --let _prima_fac_car = _prima_fac_car + _prima;
+					   let _suma_fac_car = _suma_fac_car + _suma_asegurada;
+					else
+					   let _prima_cont = _prima_cont + _prima;
+					   let _sum_cont = _sum_cont + _suma_asegurada;
+					end if
+				end if
+			end foreach
+		
+			if _sum_retencion is null then
+				let _sum_retencion = 0;
+			end if
+			if _sum_ret_casco is null then
+				let _sum_ret_casco = 0;
+			end if
+			if _suma_fac is null then
+				let _suma_fac = 0;
+			end if
+			if _suma_fac_car is null then
+				let _suma_fac_car = 0;
+			end if
+			if _sum_cont is null then
+				let _sum_cont = 0;
+			end if
+			
+			let v_suma_asegurada = _sum_retencion + _sum_ret_casco + _suma_fac + _suma_fac_car + _sum_cont;
+
+			if _prima_suscrita is null then
+				let _prima_suscrita = 0;
+			end if
+			if _prima_retenida is null then
+				let _prima_retenida = 0;
+			end if
+			if _prima_ret_casco is null then
+				let _prima_ret_casco = 0;
+			end if
+			if _prima_cont is null then
+				let _prima_cont = 0;
+			end if
+			
+			if v_suma_asegurada <> 0 then
+				if abs (_suma_aseg_end - v_suma_asegurada) > 1.00 then
+					let _sum_retencion	= ((_sum_retencion * _suma_aseg_end)/v_suma_asegurada);
+					let _sum_ret_casco	= ((_sum_ret_casco * _suma_aseg_end)/v_suma_asegurada);
+					let _suma_fac_car	= ((_suma_fac_car * _suma_aseg_end)/v_suma_asegurada);
+					let _sum_cont		= ((_sum_cont * _suma_aseg_end)/v_suma_asegurada);
+					let _suma_fac		= ((_suma_fac * _suma_aseg_end)/v_suma_asegurada);
+					let v_suma_asegurada = _suma_aseg_end;
+				end if
+			end if
+			
+			begin
+				on exception in(-239)
+					update temp_poliza
+					   set suma_asegurada	= suma_asegurada	+ v_suma_asegurada,
+						   prima_suscrita	= prima_suscrita	+ _prima_suscrita,
+						   prima_retenida	= prima_retenida	+ _prima_retenida,
+						   prima_ret_casco	= prima_ret_casco	+ _prima_ret_casco,
+						   prima_contrato	= prima_contrato	+ _prima_cont,
+						   suma_retencion	= suma_retencion	+ _sum_retencion,
+						   suma_ret_casco	= suma_ret_casco	+ _sum_ret_casco,
+						   suma_ret_cont	= suma_ret_cont		+ _sum_cont,
+						   suma_facult		= suma_facult		+ _suma_fac,
+						   suma_fac_car		= suma_fac_car		+ _suma_fac_car
+						   --unidades			= unidades + v_unidades
+					 where no_poliza = _no_poliza
+					   and no_unidad = _no_unidad;
+
+				end exception
+
+				insert into temp_poliza
+				values(	_no_poliza,
+						_no_unidad,
+						_cod_ubica,
+						v_nodocumento,
+						v_codramo,
+						v_codsucursal,
+						v_suma_asegurada,
+						_prima_suscrita,
+						_prima_retenida,
+						_prima_ret_casco,
+						_prima_cont,
+						_sum_retencion,
+						_sum_ret_casco,
+						_sum_cont,
+						_suma_fac,
+						_suma_fac_car,
+						1,
+						  _serie,
+						  _cod_contrato,
+						  _desc_contrato,
+						  _cod_cober_reas,1,v_codsubramo,
+						  v_vigencia_inic, v_vigencia_final);						
+			end
+			let v_unidades = 0;
+			let _prima_retenida = 0;
+			let v_suma_asegurada = 0;
+			let _prima_suscrita = 0;
+			let _prima_ret_casco = 0;
+			let _prima_cont = 0;
+			let _sum_retencion = 0;
+			let _sum_ret_casco = 0;
+			let _sum_cont = 0;
+			let _suma_fac = 0;
+			let _suma_fac_car = 0;
+		end foreach
+	end foreach
+end foreach
+{
+-- HG:CASO: 31242
+-- Filtro por Serie
+IF a_serie <> "*" THEN
+	LET v_filtros = TRIM(v_filtros) ||" Serie "||TRIM(a_serie);
+	LET _tipo = sp_sis04(a_serie); -- Separa los valores del String
+
+	IF _tipo <> "E" THEN -- Incluir los Registros
+		UPDATE temp_poliza
+		       SET seleccionado = 0
+		     WHERE seleccionado = 1
+		       AND serie NOT IN(SELECT codigo FROM tmp_codigos);
+	ELSE
+		UPDATE temp_poliza
+		       SET seleccionado = 0
+		     WHERE seleccionado = 1
+		       AND serie IN(SELECT codigo FROM tmp_codigos);
+		END IF
+	DROP TABLE tmp_codigos;
+END IF
+}
+--SET DEBUG FILE TO "sp_pro04bk.trc"; 
+--trace on;
+
+
+let _prima_retenida = 0;
+let v_suma_asegurada = 0;
+let _prima_suscrita = 0;
+let _prima_ret_casco = 0;
+let _prima_cont = 0;
+let _sum_retencion = 0;
+let _sum_ret_casco = 0;
+let _sum_cont = 0;
+let _suma_fac = 0;
+let _suma_fac_car = 0;
+
+FOREACH
+	 SELECT no_documento,
+	        no_unidad,
+	        desc_contrato,  
+			cod_contrato,cod_ramo,codsubramo,
+		   suma_asegurada,
+		   prima_suscrita,
+		   prima_retenida,
+		   prima_ret_casco,
+		   prima_contrato,
+		   suma_retencion,
+		   suma_ret_casco,
+		   suma_ret_cont,
+		   suma_facult,
+		   suma_fac_car,vigencia_inic,vigencia_final 
+	   INTO v_nodocumento,_no_unidad,
+	        v_desc_contrato,
+			_cod_contrato,_cod_ramo,_cod_subramo,
+			v_suma_asegurada,
+		   v_prima_suscrita,
+		   _prima_retenida,
+		   _prima_ret_casco,
+		   _prima_cont,
+		   _sum_retencion,
+		   _sum_ret_casco,
+		   _sum_cont,
+		   _suma_fac,
+		   _suma_fac_car,v_vigencia_inic,v_vigencia_final 
+	   FROM temp_poliza
+	 -- WHERE  = v_nopoliza
+	 -- GROUP BY no_documento,no_unidad,desc_contrato 
+	  ORDER BY no_documento,no_unidad,desc_contrato
+	  
+		if _prima_retenida is null then
+			let _prima_retenida = 0;
+		end if
+		if _prima_suscrita is null then
+			let _prima_suscrita = 0;
+		end if
+		
+		let v_prima_suscrita = _prima_suscrita + _prima_retenida;
+
+		if v_prima_suscrita is null then
+			let v_prima_suscrita = 0;
+		end if	 
+		
+	  
+		if _sum_retencion is null then
+			let _sum_retencion = 0;
+		end if
+		if _sum_ret_casco is null then
+			let _sum_ret_casco = 0;
+		end if
+		if _suma_fac is null then
+			let _suma_fac = 0;
+		end if
+		if _suma_fac_car is null then
+			let _suma_fac_car = 0;
+		end if
+		if _sum_cont is null then
+			let _sum_cont = 0;
+		end if
+		
+		let v_suma_asegurada = _sum_retencion + _sum_ret_casco + _suma_fac + _suma_fac_car + _sum_cont;
+
+		if v_suma_asegurada is null then
+			let v_suma_asegurada = 0;
+		end if	 
+
+   SELECT b.nombre
+     INTO v_desc_cliente
+     FROM cliclien b
+    WHERE b.cod_cliente = v_contratante;
+
+   SELECT c.nombre
+     INTO v_desc_ramo
+     FROM prdramo c
+    WHERE c.cod_ramo = _cod_ramo;
+
+   SELECT c.nombre
+     INTO v_desc_subramo
+     FROM prdsubra c
+    WHERE c.cod_ramo = _cod_ramo
+      AND c.cod_subramo = _cod_subramo;
+	  
+   select nombre
+	 into _n_grupo
+	 from cligrupo
+	where cod_grupo = _cod_grupo;	
+	  
+
+       RETURN v_descr_cia,
+       		  _cod_ramo,
+              v_desc_ramo,
+              v_desc_cliente,
+              v_nodocumento,
+              v_vigencia_inic,
+              v_vigencia_final,
+              v_prima_suscrita,
+              a_periodo,
+			  v_suma_asegurada,
+              v_filtros,
+              v_suma_asegurada,  -- _suma,
+              v_prima_suscrita,  -- _prima,
+			  _cod_contrato,
+			  v_desc_contrato,
+			  v_desc_subramo,
+			  _no_unidad,
+			  _n_grupo
+              WITH RESUME;
+			  
+			let _prima_retenida = 0;
+			let v_suma_asegurada = 0;
+			let _prima_suscrita = 0;
+			let _prima_ret_casco = 0;
+			let _prima_cont = 0;
+			let _sum_retencion = 0;
+			let _sum_ret_casco = 0;
+			let _sum_cont = 0;
+			let _suma_fac = 0;
+			let _suma_fac_car = 0;
+			
+	END FOREACH
+
+
+drop table temp_polizav;
+--drop table temp_poliza;
+drop table temp_perfil;
+drop table temp_cant;
+--drop table temp_prima;
+
+end procedure;

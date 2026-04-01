@@ -1,0 +1,102 @@
+-- Consulta de Clientes Global
+
+-- Creado    : 14/06/2001 - Autor: Armando Moreno M.
+-- Modificado: 14/06/2001 - Autor: Armando Moreno M.
+
+-- SIS v.2.0 - d_prod_sp_prd67_dw1 - DEIVID, S.A.
+
+DROP PROCEDURE sp_atc10;
+
+CREATE PROCEDURE sp_atc10(a_poliza CHAR(20))
+RETURNING CHAR(10),	
+		  CHAR(100),
+		  CHAR(30), 
+		  CHAR(10), 
+		  CHAR(50),
+		  VARCHAR(255);
+
+DEFINE v_cod_cliente  		CHAR(10);
+DEFINE _cod_ase		  		CHAR(10);
+DEFINE v_nombre_corredor	CHAR(50); 
+DEFINE v_documento   		CHAR(20);
+DEFINE v_vig_ini			DATE;
+DEFINE v_vig_fin			DATE;
+DEFINE v_prima_neta			DEC(16,2);
+DEFINE v_prima_bruta		DEC(16,2);
+DEFINE v_impuesto			DEC(16,2);
+DEFINE v_saldo				DEC(16,2);
+DEFINE v_estatus_pol	    SMALLINT;
+DEFINE v_actualizado	    SMALLINT;
+DEFINE v_no_poliza	 	    CHAR(10);
+DEFINE v_no_unidad	 	    CHAR(5);
+DEFINE v_cod_agente	 	    CHAR(5);
+DEFINE v_nombre_ramo		CHAR(50);
+DEFINE v_cod_ramo			CHAR(3);
+DEFINE v_nombre_cte			CHAR(100);
+define _cantidad			integer;
+define _telefono1           char(10);
+define _cedula              varchar(30);
+define _direccion_1         char(50);
+define _climalare           varchar(50);
+define _desc_mala_ref       varchar(250);
+define _cod_mala_refe       char(3);
+
+--SET DEBUG FILE TO "sp_atc10.trc"; 
+--trace on;
+
+SET ISOLATION TO DIRTY READ;
+
+--SACAR INFORMACION DE LA POLIZA
+
+let _cedula      	= null;
+let _telefono1    	= null;
+let _direccion_1 	= null;
+let _climalare		= null;
+let _desc_mala_ref	= null;
+
+foreach
+
+	select distinct(cod_contratante)
+	  into v_cod_cliente
+	  from emipomae
+	 where no_documento = a_poliza
+	   and actualizado  = 1
+
+	 SELECT	nombre,
+	        cedula,
+			telefono1,
+			direccion_1,
+			desc_mala_ref,
+			cod_mala_refe
+	   INTO v_nombre_cte,
+			_cedula,
+			_telefono1,
+			_direccion_1,
+			_desc_mala_ref,
+			_cod_mala_refe
+	   FROM	cliclien
+	  WHERE cod_cliente = v_cod_cliente;
+	  
+	select nombre
+      into _climalare
+      from climalare
+     where cod_mala_refe = _cod_mala_refe;
+
+    if _climalare is null then	
+		let _climalare = "";
+	end if
+
+    if _desc_mala_ref is null then	
+		let _desc_mala_ref = "";
+	end if
+	
+	RETURN  v_cod_cliente,
+			v_nombre_cte,
+			_cedula,
+			_telefono1,
+			_direccion_1,
+			trim(trim(_climalare) || " " || trim(_desc_mala_ref))
+			WITH RESUME;
+END FOREACH
+
+END PROCEDURE;

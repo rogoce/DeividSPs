@@ -1,0 +1,212 @@
+-- Procedimiento que carga los asientos del Proceso de NIIF de prima no devengada
+-- Creado    : 06/08/2013 - Autor: Román Gordón
+-- SIS v.2.0 - DEIVID, S.A.
+
+drop procedure sp_pro399a;
+
+create procedure sp_pro399a(a_fecha_desde date, a_fecha_hasta date)
+returning integer,
+	      char(100);
+
+define _error_desc			char(100);
+define _cuenta				char(25);
+define _no_poliza			char(10);
+define _periodo				char(7);
+define _cod_agente			char(5);
+define _no_endoso			char(5);
+define _centro_costo		char(3);
+define _cod_ramo			char(3);
+define _porc_comis_agt		dec(5,2);
+define _prima_no_dev		dec(16,2);
+define _credito				dec(16,2);
+define _debito				dec(16,2);
+define _monto_rcnd_pri		dec(32,2);
+define _monto_rcnd_com		dec(32,2);
+define _monto_rcnd_imp		dec(32,2);
+define _monto_psnd_imp		dec(32,2);
+define _monto_psnd_com		dec(32,2);
+define _tipo_comp			smallint;
+define _error_isam			integer;
+define _sac_notrx			integer;
+define _error				integer;
+define _vigencia_final 		date;
+define _vigencia_inic 		date;
+define _dia_ant				date;
+define _fecha				date;
+
+set isolation to dirty read;
+
+--set debug file to "sp_pro399.trc";
+--trace on;
+
+begin
+
+on exception set _error,_error_isam,_error_desc
+  rollback work;	
+  return _error,_error_desc;
+end exception
+
+let _comis_no_dev_agt = 0.00;
+let _monto_psnd_com = 0.00;
+let _monto_psnd_imp = 0.00;
+let _prima_no_dev = 0.00;
+let _credito = 0.00;
+let _debito = 0.00;
+let _sac_notrx = 0;
+let _tipo_comp = 0;
+let _dia_ant = current -1 units day;
+
+foreach
+	select cuenta,
+		   debito,
+		   credito,
+		   tipo_comp,
+		   sac_notrx,
+		   periodo
+	  into _cuenta,
+		   _debito,
+		   _credito,
+		   _tipo_comp,
+		   _periodo
+	  from prdprinodeasie
+	 where fecha = _dia_ant
+
+	
+end foreach
+
+foreach with hold
+	select no_poliza,
+		   no_endoso,
+		   fecha,
+		   prima_no_devengada,
+		   monto_rcnd_pri,
+		   monto_rcnd_com,
+		   monto_rcnd_imp,
+		   monto_psnd_imp,
+		   monto_psnd_com
+	  into _no_poliza,
+		   _no_endoso,
+		   _fecha,
+		   _prima_no_dev,
+		   _monto_rcnd_pri,
+		   _monto_rcnd_com,
+		   _monto_rcnd_imp,
+		   _monto_psnd_imp,
+		   _monto_psnd_com
+	  from prdprinode
+	 where (fecha >= a_fecha_desde
+	   and fecha <= a_fecha_hasta)
+	   and sac_asientos = 0
+	 order by fecha,no_poliza,no_endoso
+
+	begin work;
+
+	let _periodo = sp_sis39(_fecha);
+
+--Busqueda del Centro de Costo
+	call sp_sac93(_no_poliza, 1) returning _error, _error_desc, _centro_costo;
+
+	if _error <> 0 then
+		let _error_desc = "Error en sp_sac93" || " Poliza " || _no_poliza;
+		return _error, _error_desc;
+	end if
+	
+--Determinar el Tipo de Comprobante
+	select cod_ramo
+	  into _cod_ramo
+	  from emipomae
+	 where no_poliza = _no_poliza;
+	 
+	if _cod_ramo in ("001", "003") then		
+		let _tipo_comp = 10;				-- Incendio
+	elif _cod_ramo in ("002", "020") then	
+		let _tipo_comp = 11;				-- Autos
+	elif _cod_ramo in ("008") then			
+		let _tipo_comp = 12;				-- Fianzas
+	elif _cod_ramo in ("004", "016", "018", "019") then	
+		let _tipo_comp = 13;				-- Personas
+	else
+		let _tipo_comp = 14;				-- Patrimoniales
+	end if
+	
+{cod_intercta	
+NIIFIND2%R	
+NIIFCOCOND	
+NIIFCORCND	
+NIIFPRSMR}
+
+
+--Prima No Devengada Cedida
+	if _monto_psnd_imp <> 0.00 then
+		let _debito  = 0.00;
+		let _credito = 0.00;
+
+		if _monto_psnd_imp >= 0.00 then
+			let _debito  = _monto_psnd_imp;
+		else
+			let _credito = _monto_psnd_imp * -1;
+		end if
+ 
+		--let _cuenta    = sp_sis15('NIIFPNDR', '01', _no_poliza); Falta saber como sacar la cuenta.
+		let _cuenta = '14502';
+		call sp_par338(_cuenta, _debito, _credito, _tipo_comp, _periodo, _centro_costo, _fecha,_sac_notrx);		
+	end if
+	
+--Impuesto de 2% de Prima no Devengada
+	if _monto_psnd_imp <> 0.00 then
+		let _debito  = 0.00;
+		let _credito = 0.00;
+
+		if _monto_psnd_imp >= 0.00 then
+			let _debito  = _monto_psnd_imp;
+		else
+			let _credito = _monto_psnd_imp * -1;
+		end if
+ 
+		--let _cuenta    = sp_sis15('RGADRST', '01', _no_poliza); Falta saber como sacar la cuenta.
+		let _cuenta = '14502';
+		call sp_par338(_cuenta, _debito, _credito, _tipo_comp, _periodo, _centro_costo, _fecha,_sac_notrx);		
+	end if
+
+--Comision de Corredores no Devengada
+	if _monto_psnd_com <> 0.00 then
+		let _debito  = 0.00;
+		let _credito = 0.00;
+
+		if _monto_psnd_com >= 0.00 then
+			let _debito  = _monto_psnd_com;
+		else
+			let _credito = _monto_psnd_com * -1;
+		end if
+		let _cuenta = '14503';
+		--let _cuenta    = sp_sis15('RGADRST', '01', _no_poliza); Falta saber como sacar la cuenta.
+		call sp_par338(_cuenta, _debito, _credito, _tipo_comp, _periodo, _centro_costo, _fecha,_sac_notrx);
+	end if
+	let _monto_psnd_com = 0.00;
+	
+--Prima no Devengada
+	let _prima_no_dev = _prima_no_dev - _monto_psnd_imp;
+	if _prima_no_dev <> 0.00 then
+		let _debito  = 0.00;
+		let _credito = 0.00;
+
+		if _prima_no_dev >= 0.00 then
+			let _debito  = _prima_no_dev;
+		else
+			let _credito = _prima_no_dev * -1;
+		end if
+		let _cuenta = '14501';
+		--let _cuenta    = sp_sis15('RGADRST', '01', _no_poliza); Falta saber como sacar la cuenta.
+		call sp_par338(_cuenta, _debito, _credito, _tipo_comp, _periodo, _centro_costo, _fecha,_sac_notrx);	
+	end if
+	
+	update prdprinode
+	   set sac_asientos = 1
+	 where no_poliza = _no_poliza
+	   and no_endoso = _no_endoso
+	   and fecha	 = _fecha;
+	   
+	commit work;
+end foreach
+end
+end procedure

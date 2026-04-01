@@ -1,0 +1,630 @@
+--***********************************************************************************
+-- Procedimiento que genera Concurso Bogotá 2017
+--***********************************************************************************
+-- Creado    : 31/01/2017 - Autor: Armando Moreno M.
+-- Creado    : 09/02/2017 - Autor: Henry 
+
+DROP PROCEDURE sp_pro868a;
+CREATE PROCEDURE sp_pro868a(a_compania CHAR(3),a_sucursal CHAR(3))
+RETURNING SMALLINT;
+
+DEFINE _no_poliza       CHAR(10);
+DEFINE _monto           DEC(16,2);
+DEFINE _fecha           DATE;     
+DEFINE _prima           DEC(16,2);
+DEFINE _porc_partic     DEC(5,2); 
+DEFINE _porc_comis      DEC(5,2);
+DEFINE _porc_comis2     DEC(5,2);
+DEFINE _porc_coas_ancon DEC(5,2);
+DEFINE _sobrecomision   DEC(16,2);
+DEFINE _nombre          CHAR(50); 
+DEFINE _no_documento    CHAR(20); 
+DEFINE _no_requis       CHAR(10); 
+DEFINE _cod_tipoprod    CHAR(3);  
+DEFINE _tipo_prod       SMALLINT; 
+DEFINE _cod_tiporamo    CHAR(3);  
+DEFINE _tipo_ramo       SMALLINT; 
+DEFINE _cod_ramo        CHAR(3);  
+DEFINE _nombre_ramo     CHAR(50);  
+DEFINE _cod_subramo     CHAR(3);  
+DEFINE _no_licencia     CHAR(10); 
+DEFINE _tipo_mov        CHAR(1);  
+DEFINE _incobrable		SMALLINT;
+DEFINE _tipo_pago     	SMALLINT;
+DEFINE _tipo_agente     CHAR(1);
+DEFINE _cod_producto	char(5);
+DEFINE _cod_formapag    char(3);
+DEFINE _tipo_forma      SMALLINT;
+DEFINE v_prima_orig     DEC(16,2);
+DEFINE v_saldo          DEC(16,2);
+DEFINE v_por_vencer     DEC(16,2);
+DEFINE v_exigible       DEC(16,2);
+DEFINE v_corriente      DEC(16,2);
+DEFINE v_monto_30       DEC(16,2);
+DEFINE _dif		        DEC(16,2);
+define _cnt             integer;
+define _cod_grupo       char(5);
+define _cedula_agt      char(30);
+define _cedula_paga		char(30);
+define _cedula_cont		char(30);
+define _cod_pagador     char(10);
+define _cod_contratante char(10);
+define _estatus_licencia char(1);
+define _per_ini 		char(7);
+define _per_ini_ap 		char(7);
+define _per_fin_ap 		char(7);
+define _pri_sus 		DEC(16,2);
+define _error           smallint;
+define _filtros			char(255);
+define _per_fin_dic     char(7);
+define _prima_sus_pag   DEC(16,2);
+define _sini_incu		DEC(16,2);
+define _siniestralidad  DEC(16,2);
+define _fecha_pago      date;
+define _renglon         integer;
+define _porc_coaseguro	dec(16,4);
+define _prima_can		DEC(16,2);
+define _sin_pag_aa		DEC(16,2);
+define _no_reclamo		char(10);
+define _sin_pen_dic		DEC(16,2);
+define _sin_pen_aa      DEC(16,2);
+define _pri_pag         DEC(16,2);
+define _pri_can         DEC(16,2);
+define _pri_dev         DEC(16,2);
+define v_monto_90       DEC(16,2);
+define _prima_orig      DEC(16,2);
+define _prima_sus_agt   DEC(16,2);
+define _flag            smallint;
+define _cod_coasegur	char(3);
+define _cod_agente   	char(5);
+define _cantidad        integer;
+define _fecha_aa_ini    date;
+define _fecha_aa_fin    date;
+define _fecha_ap_ini    date;
+define _fecha_ap        date;
+define _vigente         smallint;
+define v_filtros        varchar(255);
+define a_periodo        char(7);
+define _n_cliente       varchar(100);
+define _nueva_renov     char(1);
+define _periodo_reno    char(7);
+define _vigen_ini		date;
+define _vigencia_ant	date;
+define _vigencia_act	date;
+define _no_pol_ren_aa	integer;
+define _no_pol_ren_ap	integer;
+
+define _no_pol_nue_aa	integer;
+define _no_pol_nue_ap	integer;
+define _no_pol_nue_ap_per	integer;
+define _estatus_poliza	smallint;
+define _pri_sus_pag_ap  DEC(16,2);
+define _pri_pag_ap      DEC(16,2);
+define _pri_can_ap      DEC(16,2);
+define _pri_dev_ap      DEC(16,2);
+define _monto_90_aa     DEC(16,2);
+define _valor		    DEC(16,2);
+define _prima_suscrita  DEC(16,2);
+define _prima_sus_ramo  DEC(16,2);
+define _prima_fac       DEC(16,2);
+define _ano				smallint;
+define _ano_ant			smallint;
+define _cod_agencia		char(3);
+define _suc_promotoria	char(3);
+define _cod_vendedor	char(3);
+define _nombre_vendedor	char(50);
+define _vigencia_inic	date;
+define _vigencia_final	date;
+define _tipo_persona	char(1);
+define _nombre_tipo		char(20);
+define _concurso,_unificar smallint;
+define _pagada smallint;
+DEFINE _porc_partic_agt    DEC(5,2); 
+
+
+--SET DEBUG FILE TO "sp_pro868a.trc";
+--TRACE ON;
+
+let _error          = 0;
+let _prima_can      = 0;
+let _pri_can        = 0;
+let _siniestralidad = 0;
+let _sini_incu      = 0;
+let _prima_sus_pag  = 0;
+let _pri_dev        = 0;
+let _cnt            = 0;
+let _pri_pag        = 0;
+let _sin_pen_dic    = 0;
+let _sin_pen_aa     = 0;
+let _sin_pag_aa     = 0;
+let v_por_vencer    = 0;
+let v_exigible	    = 0;
+let v_corriente	    = 0;
+let v_monto_30	    = 0;
+let v_monto_90	    = 0;
+let _valor          = 0;
+let _dif            = 0;
+let v_saldo         = 0;
+let _cantidad       = 0;
+let _prima_orig     = 0;
+let _porc_partic_agt = 0;
+let _prima_fac       = 0;
+
+delete from punta_cana;
+
+let _fecha_aa_ini = "13/02/2017";
+let _fecha_aa_fin = "10/06/2017";
+let _prima_suscrita  = 0;
+let _nombre_tipo     = "";
+
+create temp table tmp_caribe(
+no_documento		char(20),
+pri_sus				dec(16,2) 	default 0,
+pri_pag				dec(16,2) 	default 0,
+pri_pag_dif			dec(16,2) 	default 0,
+cod_ramo            char(3)
+) with no log;
+
+SET ISOLATION TO DIRTY READ;
+
+--Periodo de Clasificacion: Del 13 de febrero de 2017 al  10 de junio del 2017
+--*****************************
+-- Polizas Nuevas
+--*****************************
+foreach
+
+ select no_documento
+   into _no_documento
+   from emipomae
+  where cod_compania  = a_compania
+    and actualizado   = 1
+	and nueva_renov   = "N"
+    and vigencia_inic between _fecha_aa_ini and _fecha_aa_fin
+	and cod_ramo in('018','003','002','019')
+   group by no_documento
+   order by no_documento
+
+	let _no_poliza = sp_sis21(_no_documento);
+
+	let _pagada = 0;
+	
+	select sum(pagada)
+	  into _pagada
+	  from emiletra
+	 where no_poliza = _no_poliza;
+
+	if _pagada > 0 then	--Debe tener al menos un pago
+	else
+		continue foreach;
+    end if
+	
+	select count(*)
+	  into _cnt
+	  from emipouni
+	 where no_poliza = _no_poliza;
+
+	if _cnt > 1 then		--se excluye Colectivos y Flotas
+		continue foreach;
+	end if
+
+	select nueva_renov,
+	       no_documento,
+		   estatus_poliza,
+		   cod_pagador, 
+		   cod_contratante,
+		   cod_tipoprod,
+		   prima_suscrita,
+		   cod_grupo,
+		   cod_ramo
+	  into _nueva_renov,
+	       _no_documento,
+		   _estatus_poliza,
+		   _cod_pagador,
+		   _cod_contratante,
+		   _cod_tipoprod,
+		   _prima_suscrita,
+		   _cod_grupo,
+		   _cod_ramo
+	  from emipomae
+	 where no_poliza = _no_poliza;
+	 
+	if _estatus_poliza = 1 then  --solo polizas vigentes
+	else
+		continue foreach;
+	end if
+	if _cod_grupo in("00000","1000") then -- Excluir Estado
+		continue foreach;
+	end if
+
+	let _prima_fac = 0.00;
+	--Quitar el facultativo cedido
+	select sum(c.prima)
+	  into _prima_fac
+	  from emifacon c, reacomae r
+	 where c.no_poliza = _no_poliza
+	   and c.no_endoso = '00000'
+	   and r.cod_contrato = c.cod_contrato
+	   and r.tipo_contrato = 3;
+	   
+	if _prima_fac is null then
+		let _prima_fac = 0.00;
+	end if
+	let _prima_suscrita = _prima_suscrita - _prima_fac;
+	
+	SELECT tipo_produccion
+	   INTO _tipo_prod
+	   FROM emitipro
+	  WHERE cod_tipoprod = _cod_tipoprod;
+
+    if _tipo_prod in(3, 4) THEN   -- Excluir Coaseguro Minoritario y Reaseguro Asumido
+	   CONTINUE FOREACH;
+	end if
+	
+	select count(*)
+	  into _cnt
+	  from endedmae
+	 where actualizado = 1
+	   and no_poliza   = _no_poliza
+	   and cod_endomov = '003';
+
+	if _cnt > 0 then			--no polizas rehabilitadas
+		continue foreach;
+	end if 
+
+  	select count(*)
+	  into _cnt
+	  from endedmae
+	 where actualizado = 1
+	   and no_poliza   = _no_poliza
+	   and cod_endomov in('012','031');
+
+	if _cnt > 0 then			--no Cambio de Corredores
+		continue foreach;
+	end if
+	
+    let _flag = 0;
+
+	if _nueva_renov = "N" then
+		insert into tmp_caribe(no_documento,pri_sus,cod_ramo)
+		values (_no_documento,_prima_suscrita,_cod_ramo);
+	end if
+
+end foreach
+
+foreach
+	select cod_ramo,
+	       no_documento,
+		   sum(pri_sus)
+	  into _cod_ramo,
+           _no_documento,
+		   _prima_suscrita
+	  from tmp_caribe
+	 group by cod_ramo,no_documento
+	 order by cod_ramo,no_documento
+
+	let _no_poliza = sp_sis21(_no_documento);
+
+	select sucursal_origen
+	  into _cod_agencia
+	  from emipomae
+	 where no_poliza = _no_poliza;
+
+	 select nombre
+	   into _nombre_ramo
+	   from prdramo
+	  where cod_ramo = _cod_ramo;
+
+	let _dif = 0;
+		
+	foreach
+
+	  	SELECT cod_agente,
+		       porc_partic_agt
+	      INTO _cod_agente,
+		       _porc_partic_agt
+	      FROM emipoagt
+	   	 WHERE no_poliza = _no_poliza
+		 
+		let _prima_sus_agt = 0; 
+		let _prima_sus_agt = _prima_suscrita * _porc_partic_agt /100;
+		
+		let _flag = 0;
+	    if _cod_agente in('01481') then 		--Unificar Jose Caballero a Marta Caballero
+		    let _cod_agente = "01555";
+		end if
+
+		if _cod_agente in('01480','00492') then --Unificar Ricardo Caballero, los ases del seguro a Patricia Caballero
+		    let _cod_agente = "01479";
+		end if
+
+		if _cod_agente in('02129','02130','02050','01001','01000','01002','01609','01005') then --Unificar Felix Abadia
+		    let _cod_agente = "01001";
+		end if
+        let _unificar = 0;	 --Unificar FF Seguros	:25/04/2013 Leticia
+		SELECT count(*)
+		  INTO _unificar
+		  FROM agtagent 
+		 WHERE cod_agente      = _cod_agente
+		   AND agente_agrupado = "01068";
+
+		   if _unificar <> 0 then
+			   let _cod_agente = "01068";
+		   end if
+		   
+	   --1  Jovani Mora(00636), Quitza Paz(00732), Rogelio Becerra (00865) , Alberto Camacho (00731) a Servicios Internacionales (01435)	 --
+	       if _cod_agente in ("00636","00732","00865","00731") then
+			  let _cod_agente = "01435";
+		   end if
+ 
+	   --3 Doulos Insurance Consultants  (DICSA)(01048,01837) ,Logos Insurance(01569,01838), Juan Carlos Sanchez(01315,01834), Chung Wai Chun(00623,01836), Katia Mariza Dam de Spagnuolo(01575,01835)
+	       if _cod_agente in ("01837","01569","01838","01315","01834","00623","01836","01575","01835","02201") then  --- falta 02201 LATTY
+			  let _cod_agente = "01048";
+		   end if	   
+
+	   --  Afta Insurance Services(santiago)(02155), Asesora Tefi S.A.(00095), Ithiel Cesar Trib.(00130) , Seguros ICT, S.A(00235)
+	       if _cod_agente in ("02155","00095","00130","00235") then	   --Cambio segun sol. 29/05/2014 por Leticia Escobar.
+			  let _cod_agente = "01266";
+		   end if
+
+		-- Solicitud de Leticia del 09/10/2013
+		-- Unificar todos los KAM
+		-- Demetrio Hurtado (02/10/2012)
+		-- Se separa la unificacion por orden de leticia segun correo 12/04/2013, indica que se unen al final
+
+		if _cod_agente IN ("02360","02376","02293","02377","02378","02375","02082","00133","01746","01749","01852","02004","02075","02124") then  
+			let _cod_agente = "00218";													
+		end if
+
+		-- Solicitud de Leticia del 08/04/2013
+		-- Unificar Noel Quintero y Joel Quintero
+		-- Armando Moreno (08/04/2013)
+
+		if _cod_agente = "01880" then
+			let _cod_agente = "00395";													
+		end if
+
+		-- Solicitud de Leticia del 31/05/2013
+		-- Unificar Tuesca & Asociados(00946) y Corporacion Comercial(00239)
+		-- Armando Moreno (03/06/2013)
+
+		if _cod_agente = "00239" then
+			let _cod_agente = "00946";													
+		end if
+
+		-- Solicitud de Leticia del 29/09/2014
+		-- Unificar SEMUSA(00270) con semusa chitre y Semusa Santiago(01853,01814)
+		-- Armando Moreno (29/09/2014)
+
+		if _cod_agente in("01853","01814") then
+			let _cod_agente = "00270";													
+		end if
+
+		-- Solicitud de Leticia del 29/09/2014
+		-- Unificar SSEGUROS NACIONALES(00125) con seguros nacionales david(02015)
+		-- Armando Moreno (29/09/2014)
+
+		if _cod_agente in("02015") then
+			let _cod_agente = "00125";													
+		end if
+
+		-- Solicitud de Leticia del 29/09/2014
+		-- Unificar DUCRUET(00035) con ducruet david(02154)
+		-- Armando Moreno (29/09/2014)
+
+		if _cod_agente in("02154") then
+			let _cod_agente = "00035";													
+		end if
+
+		-- Solicitud de Leticia del 29/09/2014
+		-- Unificar SEGUROS CENTRALIZADOS(00166) con seguro centralizados chiriqui(01745), seg. centr. chitre(01743), seg cent.colon(01744), seg. cent. santiago(01751)
+		-- Armando Moreno (29/09/2014)
+
+		if _cod_agente in("01745","01743","01744","01751","01851") then
+			let _cod_agente = "00166";													
+		end if
+
+		-- Solicitud de Leticia del 29/09/2014
+		-- Unificar SEGUROS TEMPUS(00474) con seg. tempus chitre(02081)
+		-- Armando Moreno (29/09/2014)
+
+		if _cod_agente in("02081") then
+			let _cod_agente = "00474";													
+		end if
+
+		-- Solicitud de Leticia del 29/09/2014
+		-- Unificar  lideres en seg. santiago(01990) con LIDERES EN SEGURO(01009)
+ 		-- Armando Moreno (29/09/2014)
+
+		if _cod_agente in("01990") then
+			let _cod_agente = "01009";
+		end if
+
+		-- Solicitud de Leticia del 29/09/2014
+		-- Unificar  B&G INSURANCE GROUP CHITRE(02103) con B&G INSURANCE GROUP(01670) 
+		-- Armando Moreno (29/09/2014)
+
+		if _cod_agente in("02103") then
+			let _cod_agente = "01670";
+		end if
+
+		-- Solicitud de Leticia del 29/09/2014
+		-- Unificar SH ASESORES DE SEGUROS(01898) con sh asesores de seg chorrera(02196)
+		-- Armando Moreno (29/09/2014)
+
+		if _cod_agente in("02196") then
+			let _cod_agente = "01898";
+		end if
+
+		-- Solicitud de Leticia del 29/09/2014
+		-- Unificar GONZALEZ DE LA GUARDIA Y ASOC.(00291) con maria e. de la guardia(00197)
+		-- Armando Moreno (29/09/2014)
+
+		if _cod_agente in("00197") then
+			let _cod_agente = "00291";
+		end if
+		
+/*---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+		-- Solicitud de Leticia del 20/02/2015
+		-- Unificar Leysa Rodriguez(01904) Dalys de Rodriguez(00138) Mireya de Malo(01867) Sandra Caparroso(00965) con D.R. ASESORES DE SEGUROS(00011)
+		if _cod_agente in("01904","00138","01867","00965") then
+			let _cod_agente = "00011";
+		end if
+		
+		-- Solicitud de Leticia del 20/02/2015
+		-- Unificar Daysi de la Rosa(01948) con Corredores de Seguros de la Rosa(02208)
+		if _cod_agente in("01948") then
+			let _cod_agente = "02208";
+		end if
+		
+		-- Solicitud de Leticia del 20/02/2015
+		-- Unificar Asegure Corredor de Seguros(02102) con Lynette Lopez Arango(00817)
+		if _cod_agente in("02102") then
+			let _cod_agente = "00817";
+		end if
+		
+		-- Solicitud de Leticia del 20/02/2015
+		-- Unificar Asegure Corredor de Seguros(00517) con J2L Asesores(01440)
+		if _cod_agente in("00517") then
+			let _cod_agente = "01440";
+		end if
+
+		-- Solicitud de Leticia del 20/02/2015
+		-- Unificar Hugo Caicedo (00525) con Blue Sea Insurance Brokers, Corp.(00779)
+		if _cod_agente in("00525") then
+			let _cod_agente = "00779";
+		end if
+		
+		-- Solicitud de Leticia del 20/02/2015
+		-- Unificar Abdiel Teran Della Togna (00076) con Conjuga Insurance Solutions(02119)
+		if _cod_agente in("00076","00937") then
+			let _cod_agente = "02119";
+		end if
+
+		-- Solicitud de Leticia del 20/02/2015
+		-- Unificar Ureña y Ureña (00050) con Edgar Alberto Ureña Romero(00845)
+		if _cod_agente in("00050") then
+			let _cod_agente = "00845";
+		end if
+		
+		-- Solicitud de Leticia del 20/02/2015
+		-- Unificar Seguros y Asesoria Maritima (01916) con Roderick Subia(00793)
+		if _cod_agente in("01916") then
+			let _cod_agente = "00793";
+		end if
+		
+		-- Solicitud de Leticia del 20/02/2015
+		-- Unificar Carlos Manuel Mendez (00104) Carlos Manuel Mendez Dutari (02037) con Marcha Seguros, S.A.(00119)
+		if _cod_agente in("00104","02037") then
+			let _cod_agente = "00119";
+		end if
+		
+		-- Solicitud de Matilde Rosario del 24/02/2015
+		-- Unificar Sandra Eckardt. (01779) con  ECKARDT seguros, s. a.(02229)
+		if _cod_agente in("01779") then
+			let _cod_agente = "02229";
+		end if
+		select nombre,
+		       tipo_agente,
+			   estatus_licencia
+		  into _nombre,
+		       _tipo_agente,
+			   _estatus_licencia
+		  from agtagent
+		 where cod_agente = _cod_agente;
+
+		IF _tipo_agente <> "A" then	-- Solo Corredores
+		    let _flag = 1;
+		END IF
+
+		IF _estatus_licencia <> "A" then  -- El corredor debe estar activo
+		    let _flag = 1;
+		END IF
+		-- Informacion Necesaria para las Promotorias
+
+		select sucursal_promotoria
+		  into _suc_promotoria
+		  from insagen
+		 where codigo_agencia = _cod_agencia;
+
+		select cod_vendedor
+		  into _cod_vendedor
+		  from parpromo
+		 where cod_agente  = _cod_agente
+		   and cod_agencia = _suc_promotoria
+		   and cod_ramo	   = _cod_ramo;
+
+		select nombre
+		  into _nombre_vendedor
+		  from agtvende
+		 where cod_vendedor = _cod_vendedor;
+		 
+		if _flag = 0 then
+			insert into punta_cana(
+			cod_agente,
+			no_documento,
+			n_agente,
+			prima_cobrada,
+			prima_sus_nva,
+			cod_vendedor,
+			nombre_vendedor,
+			cod_ramo,
+			nombre_ramo,
+			tipo_agente
+			)
+			values(
+			_cod_agente, 
+			_no_documento, 
+			_nombre,
+			_pri_pag,
+			_prima_sus_agt,
+			_cod_vendedor,
+			_nombre_vendedor,
+			_cod_ramo,
+			_nombre_ramo,
+			_nombre_tipo);
+		end if	
+	end foreach
+end foreach
+
+foreach
+	select cod_agente,
+	       sum(prima_sus_nva)
+	  into _cod_agente,
+           _prima_sus_agt
+	  from punta_cana
+  group by cod_agente
+  order by cod_agente
+  
+	let _prima_sus_ramo = 0;
+	
+  	select sum(prima_sus_nva)
+	  into _prima_sus_ramo
+	  from punta_cana
+	 where cod_agente = _cod_agente
+	   and cod_ramo in('018','003','019');
+  
+	if _prima_sus_agt >= 800000 and _prima_sus_ramo >= 25000 then
+			let _nombre_tipo = "Grupo I";
+	elif _prima_sus_agt >= 50000 and _prima_sus_ramo >= 15000 then
+			let _nombre_tipo = "Grupo II";
+	elif _prima_sus_agt >= 35000 and _prima_sus_ramo >= 10000 then
+			let _nombre_tipo = "Grupo III";
+	elif _prima_sus_agt >= 25000 and _prima_sus_ramo >= 7500 then
+			let _nombre_tipo = "Grupo IV";
+	elif _prima_sus_agt >= 15000 and _prima_sus_ramo >= 5000 then
+			let _nombre_tipo = "Grupo V";	
+	else
+			let _nombre_tipo = "N/A";
+	end if
+
+	 update punta_cana
+		set tipo_agente = _nombre_tipo
+	  where cod_agente  = _cod_agente;
+	 
+end foreach
+
+drop table tmp_caribe;
+
+return 0;
+
+END PROCEDURE;

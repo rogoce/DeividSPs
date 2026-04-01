@@ -1,0 +1,16 @@
+                select caso,
+                                  sum(reserva_mes_ant),
+                                  sum(reserva_mes_act),
+                                  sum(pagado_bruto),
+                                  sum(pagado_bruto_ant)
+                  into _no_reclamo,
+                                  _res_mes_ant,
+                                  _res_mes_act,
+                                  _pagado_bruto
+                                  _pagado_bruto_ant
+                  from
+                  (      select no_reclamo as caso, reserva_bruto as reserva_mes_ant, 0 as reserva_mes_act,             0 as pagado_bruto,            0 as pagado_bruto_ant             from tmp_res_mes_ant
+                   union select no_reclamo as caso, 0 as reserva_mes_ant,             reserva_bruto as reserva_mes_act, 0 as pagado_bruto,            0 as pagado_bruto_ant             from tmp_res_mes_act
+                   union select no_reclamo as caso, 0 as reserva_mes_ant,             0 as reserva_mes_act,             pagado_bruto as pagado_bruto, 0 as pagado_bruto_ant             from tmp_sinis_pag_act
+                   union select no_reclamo as caso, 0 as reserva_mes_ant,             0 as reserva_mes_act,             0 as pagado_bruto,            pagado_bruto as pagado_bruto_ant  from tmp_sinis_pag_ant)
+                group by caso

@@ -1,0 +1,104 @@
+-- Requisiciones Pendientes de Pagar para los Reclamos de Salud
+-- Para poder agregar mas transacciones de reclamos a una misma 
+-- requisicion
+
+-- Creado    : 15/01/2002 - Autor: Demetrio Hurtado Almanza
+-- Modificado: 15/01/2002 - Autor: Demetrio Hurtado Almanza
+-- Modificado: 09/10/2003 - Autor: Demetrio Hurtado Almanza
+--			   Se elimino la parte de buscar que sea el mismo reclamo, para que sean
+--			   todas las transacciones de pago del mismo cliente
+-- Modificado  05/04/2006 - Autor: Amado Perez 
+--             Se valida que solo sean requisiciones de reclamos de salud
+
+-- SIS v.2.0 - d_recl_tra_ayuda_requis2 - DEIVID, S.A.
+
+drop procedure sp_rec76;
+
+create procedure sp_rec76(a_cod_cliente char(10)
+) returning date,
+			char(10),
+			char(100),
+			dec(16,2);
+
+define _no_requis		char(10);
+define _fecha_captura	date;
+define _nombre			char(100);
+define _monto			dec(16,2);
+define _numrecla        char(20);
+define _no_poliza       char(10);
+define _cod_ramo        char(3);
+define _ramo_sis        smallint;
+define _cod_banco       char(3);
+define _cod_chequera    char(3);
+define _descripcion		char(100);
+
+SET ISOLATION TO DIRTY READ;
+
+select nombre
+  into _nombre
+  from cliclien
+ where cod_cliente = a_cod_cliente;
+
+select cod_banco,
+       cod_chequera
+  into _cod_banco,
+	   _cod_chequera
+  from chqbanch
+ where cod_ramo = '018';
+
+foreach
+ select	no_requis,
+		fecha_captura,
+		monto
+   into	_no_requis,
+		_fecha_captura,
+		_monto
+   from	chqchmae
+  where cod_cliente   = a_cod_cliente
+	and pagado        = 0
+	and anulado       = 0
+	and origen_cheque = "3"
+	and cod_banco     = _cod_banco
+	and cod_chequera  = _cod_chequera
+	and en_firma	  = 0
+
+--    and autorizado    = 1	se quito para que unifique cuando se acaba el disponible.
+
+ foreach
+	select numrecla
+	  into _numrecla
+	  from chqchrec
+	 where no_requis = _no_requis
+
+	select no_poliza
+	  into _no_poliza
+	  from recrcmae
+	 where numrecla = _numrecla;
+
+    select cod_ramo
+	  into _cod_ramo
+	  from emipomae
+	 where no_poliza = _no_poliza;
+
+    select ramo_sis
+	  into _ramo_sis
+	  from prdramo
+	 where cod_ramo = _cod_ramo;
+
+	if _ramo_sis <> 5 then
+		exit foreach;
+	end if
+ end foreach
+
+ if _ramo_sis <> 5 then
+	continue foreach;
+ end if
+
+ return _fecha_captura,
+        _no_requis,
+  	    _nombre,
+		_monto;
+
+end foreach
+
+end procedure

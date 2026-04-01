@@ -1,0 +1,2423 @@
+   DROP procedure sp_pro567;
+
+   CREATE procedure "informix".sp_pro567(a_cia CHAR(03),a_agencia CHAR(3),a_periodo CHAR(7))
+
+   RETURNING CHAR(50),INT,DECIMAL(16,2),CHAR(50),CHAR(45),INT,SMALLINT,DECIMAL(16,2),INTEGER,CHAR(3),int;
+--------------------------------------------
+---  APADEA
+---  INFORMACION ESTADISTICA MENSUAL
+---
+---  Amado Perez M. 02/02/2007
+---  Modificado 12/03/2013 se agrega el ramo 022 de equipo pesado a Ramos Tecnicos
+---  Ref. Power Builder
+--------------------------------------------
+
+    DEFINE v_cod_ramo,v_cod_subramo,_cod_ramo,_cod_subramo  CHAR(3);
+    DEFINE v_desc_ramo        CHAR(50);
+    DEFINE v_desc_subramo     CHAR(50);
+    DEFINE descr_cia	      CHAR(45);
+    DEFINE unidades2          SMALLINT;
+    DEFINE _no_poliza,_no_reclamo         CHAR(10);
+    DEFINE v_cant_polizas,_cnt_reclamo          INTEGER;
+    DEFINE v_prima_suscrita,v_prima_retenida,
+           _prima_suscrita,_prima_retenida,v_suma_asegurada,_total_pri_sus,v_incurrido_bruto   DECIMAL(16,2);
+    DEFINE _tipo,_nueva_renov              CHAR(01);
+    DEFINE v_filtros          CHAR(255);
+	DEFINE _mes2,_mes,_ano2,_orden   SMALLINT;
+	DEFINE _fecha2     	      DATE;
+	DEFINE _cod_tipoprod	  char(3);
+	DEFINE _cod_sucursal      char(3);
+	DEFINE _prima_pma		  dec(16,2);
+	DEFINE _prima_col		  dec(16,2);
+	DEFINE _prima_chi		  dec(16,2);
+	DEFINE _prima_otro		  dec(16,2);
+	DEFINE _prima_ext     	  dec(16,2);
+	DEFINE _incu_pma		  dec(16,2);
+	DEFINE _incu_col		  dec(16,2);
+	DEFINE _incu_chi		  dec(16,2);
+	DEFINE _incu_otro		  dec(16,2);
+	DEFINE _incu_ext		  dec(16,2);
+	DEFINE _cod_cobertura     char(5);
+	DEFINE _prima_neta		  dec(16,2);
+	DEFINE _incurrido_bruto	  dec(16,2);
+	DEFINE _prima_auto_part   dec(16,2);
+	DEFINE _prima_auto_come   dec(16,2);
+	DEFINE _incu_auto_part    dec(16,2);
+	DEFINE _incu_auto_come    dec(16,2);
+	DEFINE _no_endoso         char(5);
+	DEFINE _cnt_poliza_p      int;
+	DEFINE _cnt_poliza_c      int;
+	define _cant_unidad       int;
+	DEFINE _cnt_auto_p		  int;
+	DEFINE _cnt_auto_c		  int;
+	DEFINE _cnt_incu_p        int;
+	DEFINE _cnt_incu_c        int;
+	define _inc_bruto         dec(16,2);
+	DEFINE _cantidad          int;
+	DEFINE _cantidad_acu      int;
+	DEFINE _cod_sub_cob, _cod_origen  CHAR(3);
+	DEFINE _dif               dec(16,2);
+	DEFINE _vig_fin_vida, _vigencia_inic, _vig_ini_end  date;
+	define li_dia,li_mes,li_anio smallint;
+	DEFINE _no_unidad         INT;
+	DEFINE _no_tranrec        char(10);
+	DEFINE _cnt_r, _cnt_i, _cnt_e int;
+
+    CREATE TEMP TABLE temp_perfil1(
+              cod_ramo       CHAR(3),
+              cod_subramo    CHAR(3),
+              cant_polizas   INTEGER,
+              PRIMARY KEY(cod_ramo,cod_subramo)) WITH NO LOG;
+
+    CREATE TEMP TABLE temp_perfil2(
+              cod_ramo       CHAR(3),
+              cod_subramo    CHAR(3),
+              nueva_renov    CHAR(1),
+			  prima_suscrita DECIMAL(16,2),
+              PRIMARY KEY(cod_ramo,cod_subramo)) WITH NO LOG;
+
+    CREATE TEMP TABLE temp_cant_uni(
+          cod_ramo       CHAR(3),
+          cod_subramo    CHAR(3),
+          cant_unidad   INTEGER,
+          PRIMARY KEY(cod_ramo,cod_subramo)) WITH NO LOG;
+
+LET v_cod_ramo       = NULL;
+LET v_cod_subramo    = NULL;
+LET v_desc_subramo   = NULL;
+LET v_cant_polizas   = 0;
+LET _cant_unidad     = 0;
+LET v_prima_suscrita = 0;
+LET _prima_suscrita  = 0;
+LET _tipo            = NULL;
+let _cantidad_acu    = 0;
+
+SET ISOLATION TO DIRTY READ;
+
+LET descr_cia = sp_sis01(a_cia);
+
+-- Descomponer los periodos en fechas
+
+LET _ano2 = a_periodo[1,4];
+LET _mes2 = a_periodo[6,7];
+LET _mes = _mes2;
+
+IF _mes2 = 12 THEN
+   LET _mes2 = 1;
+   LET _ano2 = _ano2 + 1;
+ELSE
+   LET _mes2 = _mes2 + 1;
+END IF
+
+LET _fecha2 = MDY(_mes2,1,_ano2);
+LET _fecha2 = _fecha2 - 1;
+--begin work;
+--Crea tabla temp_ramo
+CALL sp_pr94a();
+
+--trae cant. de polizas vig. temp_perfil
+CALL sp_pro95(
+a_cia,
+a_agencia,
+_fecha2,
+'*',
+'4;Ex') RETURNING v_filtros;
+
+--trae primas suscritas del mes. tmp_prod
+CALL sp_pro178b(
+a_cia,
+a_agencia,
+a_periodo,
+a_periodo,
+'*',
+'*',
+'*',
+'*',
+'4;Ex',		--Reaseguro Asumido Excluido
+'*'
+) RETURNING v_filtros;
+
+--Trae los siniestros brutos incurridos tmp_siniest
+
+CALL sp_pro178d(
+a_cia,
+a_agencia,
+a_periodo,
+a_periodo
+);
+
+-- Excluye los Reclamos en Reaseguro Asumido
+
+update tmp_siniest
+   set seleccionado = 0
+ where seleccionado = 1
+   and cod_tipoprod = "004";
+
+update tmp_siniest
+   set cod_ramo = "002"
+ where cod_ramo = "020";
+
+update tmp_siniest
+   set cod_ramo = "002"
+ where cod_ramo = "023";
+
+update tmp_siniest
+   set cod_ramo = "001"
+ where cod_ramo = "021";
+
+update temp_perfil
+   set cod_ramo = '002'
+ where cod_ramo = '023';
+
+update temp_perfil
+   set cod_ramo = '002'
+ where cod_ramo = '020';
+
+update temp_perfil
+   set cod_ramo = '001'
+ where cod_ramo = '021';
+ 
+update temp_ramo
+   set cod_ramo = '002'
+ where cod_ramo = '023';
+
+update temp_ramo
+   set cod_ramo = '002'
+ where cod_ramo = '020';
+
+update temp_ramo
+   set cod_ramo = '001'
+ where cod_ramo = '021';
+
+--Trae la cant. de reclamos por ramo
+CALL sp_rec03(
+a_cia,
+a_periodo,
+a_periodo
+) RETURNING v_filtros;
+
+update tmp_sinis
+   set cod_ramo = "002"
+ where cod_ramo = "020";
+
+update tmp_sinis
+   set cod_ramo = "002"
+ where cod_ramo = "023";
+ 
+update tmp_sinis
+   set cod_ramo = "001"
+ where cod_ramo = "021";
+ 
+update tmp_cobp
+   set cod_ramo = "002"
+ where cod_ramo = "020";
+
+update tmp_cobp
+   set cod_ramo = "002"
+ where cod_ramo = "023";
+ 
+update tmp_cobp
+   set cod_ramo = "001"
+ where cod_ramo = "021";
+ 
+update tmp_inc_cob
+   set cod_ramo = "002"
+ where cod_ramo = "020";
+
+update tmp_inc_cob
+   set cod_ramo = "002"
+ where cod_ramo = "023";
+ 
+update tmp_inc_cob
+   set cod_ramo = "001"
+ where cod_ramo = "021";
+
+UPDATE ramosubr2
+   SET prima_suscrita  = 0,
+       cnt_polizas     = 0,
+	   cnt_reclamo     = 0,
+	   cnt_autos       = 0,
+	   incurrido_bruto = 0;
+
+DELETE FROM ramozona;
+--DELETE FROM ramocober;
+DELETE FROM ramocoberh;
+
+LET _prima_auto_part     = 0;
+LET _prima_auto_come	 = 0;
+LET _incu_auto_part 	 = 0;
+LET _incu_auto_come 	 = 0;
+LET _cnt_poliza_p        = 0;
+LET _cnt_poliza_c        = 0;
+LET _cnt_incu_p          = 0;
+LET _cnt_incu_c          = 0;
+
+FOREACH
+ SELECT cod_ramo,
+		total_pri_sus,
+		no_poliza,
+		no_endoso,
+		cod_sucursal
+   INTO _cod_ramo,
+		_total_pri_sus,
+		_no_poliza,
+		_no_endoso,
+		_cod_sucursal
+   FROM tmp_prod
+  WHERE	seleccionado = 1
+
+  IF _cod_ramo = '020' THEN	  --soda
+	LET _cod_ramo = '002';
+  END IF
+
+  IF _cod_ramo = '023' THEN	  --auto flotas
+	LET _cod_ramo = '002';
+  END IF
+
+  IF _cod_ramo = '021' THEN	  --todo riesgo
+	LET _cod_ramo = '001';
+  END IF
+
+  IF _total_pri_sus IS NULL THEN
+  	LET _total_pri_sus = 0;
+  END IF
+
+  LET _prima_pma = 0;
+  LET _prima_col = 0;
+  LET _prima_chi = 0;
+  LET _prima_otro = 0;
+  LET _prima_ext = 0;
+
+	-- Informacion de Poliza
+   SELECT nueva_renov,
+   	      cod_subramo,
+   	      cod_origen,
+   	      vigencia_inic
+     INTO _nueva_renov,
+		  _cod_subramo,
+		  _cod_origen,
+		  _vigencia_inic
+     FROM emipomae
+    WHERE no_poliza = _no_poliza;
+
+   SELECT vigencia_inic
+     INTO _vig_ini_end
+	 FROM endedmae
+	WHERE no_poliza = _no_poliza
+	  AND no_endoso = _no_endoso;
+
+
+   --
+   let li_dia = day(_vigencia_inic);
+   let li_mes = month(_vigencia_inic);
+   let li_anio = year(_vigencia_inic);
+
+   If li_mes = 2 Then
+	If li_dia > 28 Then
+		let li_dia = 28;
+       	let _vigencia_inic = mdy(li_mes, li_dia, li_anio);
+	else
+		let _vigencia_inic = mdy(li_mes, li_dia, li_anio);
+	End If
+   else
+	let _vigencia_inic = mdy(li_mes, li_dia, li_anio);
+   End If
+   --
+
+   LET _vig_fin_vida = _vigencia_inic + 1 UNITS YEAR;
+
+   IF _cod_ramo = "019" AND _nueva_renov = "N" THEN --_vig_fin_vida > _vig_ini_end THEN
+   --_nueva_renov = "N" THEN
+     UPDATE ramosubr2
+        SET prima_suscrita = prima_suscrita + _total_pri_sus
+      WHERE cod_ramo     = _cod_ramo
+        AND cod_subramo  = "001";
+   END IF
+
+   IF _cod_ramo = "019" AND _nueva_renov = "R" THEN --_vig_fin_vida <= _vig_ini_end THEN
+   --AND _nueva_renov = "R" THEN
+     UPDATE ramosubr2
+        SET prima_suscrita = prima_suscrita + _total_pri_sus
+      WHERE cod_ramo     = _cod_ramo
+        AND cod_subramo  = "002";
+   END IF
+
+   IF _cod_ramo = '004' OR _cod_ramo = '018' THEN
+	 select count(*)
+	   into _cantidad
+	   from emipouni
+	  where no_poliza = _no_poliza;
+
+	if _cantidad > 1 then
+     UPDATE ramosubr2
+        SET prima_suscrita = prima_suscrita + _total_pri_sus
+      WHERE cod_ramo     = _cod_ramo
+        AND cod_subramo  = "002";
+	else
+     UPDATE ramosubr2
+        SET prima_suscrita = prima_suscrita + _total_pri_sus
+      WHERE cod_ramo     = _cod_ramo
+        AND cod_subramo  = "001";
+	end if
+   END IF
+
+
+	   BEGIN
+          ON EXCEPTION IN(-239)
+             UPDATE temp_perfil2
+                SET prima_suscrita = prima_suscrita + _total_pri_sus
+              WHERE cod_ramo       = _cod_ramo
+                AND cod_subramo    = _cod_subramo;
+
+          END EXCEPTION
+          INSERT INTO temp_perfil2
+              VALUES(_cod_ramo,
+                     _cod_subramo,
+                     _nueva_renov,
+                     _total_pri_sus
+                     );
+       END
+
+	 -- Esta es para la parte de primas por sucursal
+
+       IF _cod_ramo = "004" or _cod_ramo = "016" or _cod_ramo = "018" or _cod_ramo = "019" Then
+	      LET _orden = 1;
+	   ELIF _cod_ramo = "008" THEN
+	      LET _orden = 3;
+       ELSE
+	      LET _orden = 2;
+	   END IF
+
+	   IF _cod_sucursal = '001' AND _cod_origen = "001" THEN
+	   		LET _prima_pma = _total_pri_sus;
+	   ELIF _cod_sucursal = '002' AND _cod_origen = "001" THEN
+	   		LET _prima_col = _total_pri_sus;
+	   ELIF _cod_sucursal = '003' AND _cod_origen = "001" THEN
+	   		LET _prima_chi = _total_pri_sus;
+	   ELSE
+	   	    IF _cod_origen = "001" THEN
+	   			LET _prima_otro = _total_pri_sus;
+			ELSE
+	   			LET _prima_ext = _total_pri_sus;
+			END IF
+	   END IF
+
+       BEGIN
+          ON EXCEPTION IN(-239, -268)
+             UPDATE ramozona
+                SET prima_pma  = prima_pma + _prima_pma,
+					prima_col  = prima_col + _prima_col,
+					prima_chi  = prima_chi + _prima_chi,
+					prima_otro = prima_otro + _prima_otro,
+					prima_ext  = prima_ext + _prima_ext
+              WHERE cod_ramo   = _cod_ramo;
+    --            AND orden2    = 1;
+
+          END EXCEPTION
+          INSERT INTO ramozona
+              VALUES(_cod_ramo,
+			         _orden,
+                     _prima_pma,
+                     _prima_col,
+                     _prima_chi,
+					 _prima_otro,
+					 0,
+					 0,
+					 0,
+					 0,
+					 1,
+					 _prima_ext,
+					 0
+                     );
+	   END
+	   -- Codificacion primas por cobertura
+	   IF _cod_ramo = "002" Or _cod_ramo = "020" Or _cod_ramo = "023" THEN
+
+{			   LET _prima_neta = 0;
+	           LET _dif = 0;
+
+		   		SELECT SUM(prima_neta)
+				  INTO _prima_neta
+				  FROM tmp_cobp
+				 WHERE no_poliza = _no_poliza
+				   AND no_endoso = _no_endoso;
+
+               IF  _prima_neta < 0 Then
+			   	LET _prima_neta = _prima_neta * -1;
+			   END IF
+
+               IF  _total_pri_sus < 0 Then
+			   	LET _total_pri_sus = _total_pri_sus * -1;
+			   END IF
+
+               LET _dif = _prima_neta - _total_pri_sus;
+
+			   IF _dif > 0.00 THEN
+					let _dif = _dif * -1;
+					INSERT INTO tmp_cobp(
+					no_poliza,
+					no_endoso,
+					cod_cobertura,
+					prima_neta,
+					cod_ramo,
+					cod_subramo
+					)
+					VALUES(
+					_no_poliza,
+			        _no_endoso,
+					"00121",
+					_dif,
+					_cod_ramo,
+					_cod_subramo
+					);
+  			   ELIF _dif < 0.00 THEN
+					let _dif = _dif * -1;
+					INSERT INTO tmp_cobp(
+					no_poliza,
+					no_endoso,
+					cod_cobertura,
+					prima_neta,
+					cod_ramo,
+					cod_subramo
+					)
+					VALUES(
+					_no_poliza,
+			        _no_endoso,
+					"00121",
+					_dif,
+					_cod_ramo,
+					_cod_subramo
+					);
+			   END IF
+				}
+			   IF _cod_subramo = '001' THEN
+			   		LET _prima_auto_part = _prima_auto_part + _total_pri_sus;
+			   ELSE
+			   		LET _prima_auto_come = _prima_auto_come + _total_pri_sus;
+			   END IF
+		  -- END IF
+	   END IF
+
+END FOREACH
+
+--SET DEBUG FILE TO "sp_pro178.trc";
+--trace on;
+
+---RECLAMOS
+FOREACH
+	SELECT cod_ramo,
+	       cod_subramo,
+		   incurrido_bruto,
+		   no_poliza
+	   INTO	_cod_ramo,
+	        _cod_subramo,
+			v_incurrido_bruto,
+			_no_poliza
+	   FROM	tmp_siniest
+	  WHERE seleccionado = 1
+
+    IF _cod_ramo = '020' THEN
+		LET _cod_ramo = '002';
+	END IF
+
+    IF _cod_ramo = '023' THEN
+		LET _cod_ramo = '002';
+	END IF
+
+	IF _cod_ramo = '021' THEN
+		LET _cod_ramo = '001';
+	END IF
+
+	IF v_incurrido_bruto IS NULL THEN
+		LET v_incurrido_bruto = 0;
+	END IF
+
+	LET _incu_pma = 0;
+	LET _incu_col = 0;
+	LET _incu_chi = 0;
+	LET _incu_otro = 0;
+	LET _incu_ext = 0;
+
+    SELECT nueva_renov,
+	       sucursal_origen,
+		   cod_origen,
+		   vigencia_inic
+      INTO _nueva_renov,
+	       _cod_sucursal,
+		   _cod_origen,
+		   _vigencia_inic
+      FROM emipomae
+     WHERE no_poliza = _no_poliza;
+
+	--
+	let li_dia = day(_vigencia_inic);
+	let li_mes = month(_vigencia_inic);
+	let li_anio = year(_vigencia_inic);
+
+	If li_mes = 2 Then
+	If li_dia > 28 Then
+		let li_dia = 28;
+	    	let _vigencia_inic = mdy(li_mes, li_dia, li_anio);
+	else
+		let _vigencia_inic = mdy(li_mes, li_dia, li_anio);
+	End If
+	else
+	let _vigencia_inic = mdy(li_mes, li_dia, li_anio);
+	End If
+	--
+
+   LET _vig_fin_vida = _vigencia_inic + 1 UNITS YEAR;
+
+    IF _cod_ramo = "003" AND _cod_subramo = "001" THEN
+      UPDATE ramosubr2
+         SET incurrido_bruto = incurrido_bruto + v_incurrido_bruto
+       WHERE cod_ramo     = _cod_ramo
+         AND cod_subramo  = _cod_subramo;
+    END IF
+
+    IF _cod_ramo = "003" AND _cod_subramo = "002" THEN
+      UPDATE ramosubr2
+         SET incurrido_bruto = incurrido_bruto + v_incurrido_bruto
+       WHERE cod_ramo     = _cod_ramo
+         AND cod_subramo  = _cod_subramo;
+    END IF
+
+    IF _cod_ramo = "003" AND _cod_subramo NOT IN ("001", "002") THEN -->No cuadra el informe Amado 16-12-2011
+		LET v_incurrido_bruto = 0;
+    END IF
+
+{    IF _cod_ramo = "005" AND _cod_subramo = "001" THEN
+      UPDATE ramosubr2
+         SET incurrido_bruto = incurrido_bruto + v_incurrido_bruto
+       WHERE cod_ramo     = _cod_ramo
+         AND cod_subramo  = _cod_subramo;
+    END IF}
+
+    IF _cod_ramo = "017" AND _cod_subramo = "001" THEN
+      UPDATE ramosubr2
+         SET incurrido_bruto = incurrido_bruto + v_incurrido_bruto
+       WHERE cod_ramo     = _cod_ramo
+         AND cod_subramo  = _cod_subramo;
+    END IF
+
+    IF _cod_ramo = "017" AND _cod_subramo = "002" THEN
+      UPDATE ramosubr2
+         SET incurrido_bruto = incurrido_bruto + v_incurrido_bruto
+       WHERE cod_ramo     = _cod_ramo
+         AND cod_subramo  = _cod_subramo;
+    END IF
+
+    IF _cod_ramo = "019" AND _vig_fin_vida >= _fecha2 THEN
+    --_nueva_renov = "N" THEN
+      UPDATE ramosubr2
+         SET incurrido_bruto = incurrido_bruto + v_incurrido_bruto
+       WHERE cod_ramo     = _cod_ramo
+         AND cod_subramo  = "001";
+    END IF
+
+    IF _cod_ramo = "019" AND _vig_fin_vida < _fecha2 THEN
+    --_nueva_renov = "R" THEN
+      UPDATE ramosubr2
+         SET incurrido_bruto = incurrido_bruto + v_incurrido_bruto
+       WHERE cod_ramo     = _cod_ramo
+         AND cod_subramo  = "002";
+    END IF
+
+    IF _cod_ramo = '004' OR _cod_ramo = '018' THEN
+		select count(*)
+		  into _cantidad
+		  from emipouni
+		 where no_poliza = _no_poliza;
+
+		if _cantidad > 1 then
+	     UPDATE ramosubr2
+	        SET incurrido_bruto = incurrido_bruto + v_incurrido_bruto
+	      WHERE cod_ramo     = _cod_ramo
+	        AND cod_subramo  = "002";
+		else
+	     UPDATE ramosubr2
+	        SET incurrido_bruto = incurrido_bruto + v_incurrido_bruto
+	      WHERE cod_ramo     = _cod_ramo
+	        AND cod_subramo  = "001";
+		end if
+    END IF
+	---	 ramo incendio subramo servicio, se incluyo para que cuadrara informe.
+    IF _cod_ramo = "001" AND _cod_subramo not in ("001", "002", "003") THEN
+      UPDATE ramosubr2
+         SET incurrido_bruto = incurrido_bruto + v_incurrido_bruto
+       WHERE cod_ramo     = _cod_ramo
+         AND cod_subramo  = '002';
+    END IF
+
+    IF _cod_ramo = "001" AND _cod_subramo = "001" THEN
+      UPDATE ramosubr2
+         SET incurrido_bruto = incurrido_bruto + v_incurrido_bruto
+       WHERE cod_ramo     = _cod_ramo
+         AND cod_subramo  = _cod_subramo;
+    END IF
+
+    IF _cod_ramo = "001" AND _cod_subramo = "002" THEN
+      UPDATE ramosubr2
+         SET incurrido_bruto = incurrido_bruto + v_incurrido_bruto
+       WHERE cod_ramo     = _cod_ramo
+         AND cod_subramo  = _cod_subramo;
+    END IF
+
+    IF _cod_ramo = "001" AND _cod_subramo = "003" THEN
+      UPDATE ramosubr2
+         SET incurrido_bruto = incurrido_bruto + v_incurrido_bruto
+       WHERE cod_ramo     = _cod_ramo
+         AND cod_subramo  = _cod_subramo;
+    END IF
+
+    IF _cod_ramo = "014" OR _cod_ramo = "013" THEN
+      UPDATE ramosubr2
+         SET incurrido_bruto = incurrido_bruto + v_incurrido_bruto
+       WHERE cod_ramo     = "010"
+         AND cod_subramo  = "001";
+    END IF
+
+    IF _cod_ramo = "010" THEN
+      UPDATE ramosubr2
+         SET incurrido_bruto = incurrido_bruto + v_incurrido_bruto
+       WHERE cod_ramo     = "010"
+         AND cod_subramo  = "002";
+    END IF
+
+    IF _cod_ramo = "012" THEN
+      UPDATE ramosubr2
+         SET incurrido_bruto = incurrido_bruto + v_incurrido_bruto
+       WHERE cod_ramo     = "010"
+         AND cod_subramo  = "003";
+    END IF
+
+    IF _cod_ramo = "011" THEN
+      UPDATE ramosubr2
+         SET incurrido_bruto = incurrido_bruto + v_incurrido_bruto
+       WHERE cod_ramo     = "010"
+         AND cod_subramo  = "004";
+    END IF
+
+    IF _cod_ramo = "022" THEN
+      UPDATE ramosubr2
+         SET incurrido_bruto = incurrido_bruto + v_incurrido_bruto
+       WHERE cod_ramo     = "010"
+         AND cod_subramo  = "005";
+    END IF
+
+    IF _cod_ramo = "006" THEN
+      UPDATE ramosubr2
+         SET incurrido_bruto = incurrido_bruto + v_incurrido_bruto
+       WHERE cod_ramo     = "011"
+         AND cod_subramo  = "001";
+    END IF
+
+    IF _cod_ramo = "005" THEN
+      UPDATE ramosubr2
+         SET incurrido_bruto = incurrido_bruto + v_incurrido_bruto
+       WHERE cod_ramo     = "011"
+         AND cod_subramo  = "002";
+    END IF
+
+    IF _cod_ramo = "015" OR _cod_ramo = "007" THEN
+      UPDATE ramosubr2
+         SET incurrido_bruto = incurrido_bruto + v_incurrido_bruto
+       WHERE cod_ramo     = "011"
+         AND cod_subramo  = "005";
+    END IF
+
+    IF _cod_ramo = "008" THEN
+      IF _cod_subramo = "002" OR _cod_subramo = "003" OR _cod_subramo = "018" THEN
+	      UPDATE ramosubr2
+	         SET incurrido_bruto = incurrido_bruto + v_incurrido_bruto
+	       WHERE cod_ramo     = _cod_ramo
+	         AND cod_subramo  = "001";
+	  ELSE
+	      UPDATE ramosubr2
+	         SET incurrido_bruto = incurrido_bruto + v_incurrido_bruto
+	       WHERE cod_ramo     = _cod_ramo
+	         AND cod_subramo  = "002";
+	  END IF
+    END IF
+
+
+	 -- Esta es para la parte de siniestros por sucursal
+       IF _cod_ramo = "004" or _cod_ramo = "016" or _cod_ramo = "018" or _cod_ramo = "019" Then
+	      LET _orden = 1;
+	   ELIF _cod_ramo = "008" THEN
+	      LET _orden = 3;
+       ELSE
+	      LET _orden = 2;
+	   END IF
+
+	   IF _cod_sucursal = '001' THEN
+	   		LET _incu_pma = v_incurrido_bruto;
+	   ELIF _cod_sucursal = '002' THEN
+	   		LET _incu_col = v_incurrido_bruto;
+	   ELIF _cod_sucursal = '003' THEN
+	   		LET _incu_chi = v_incurrido_bruto;
+	   ELSE
+	        IF _cod_origen = '001' THEN
+	   			LET _incu_otro = v_incurrido_bruto;
+			ELSE
+	   			LET _incu_ext = v_incurrido_bruto;
+			END IF
+	   END IF
+
+       {IF _cod_ramo = "001" and _cod_subramo = "004" THEN
+            let _incu_pma = 0;
+            let _incu_col  = 0;
+            let _incu_chi  = 0;
+		    let _incu_otro = 0;
+	   end if}
+
+       BEGIN
+          ON EXCEPTION IN(-239, -268)
+             UPDATE ramozona
+                SET incu_pma  = incu_pma  + _incu_pma,
+					incu_col  = incu_col  + _incu_col,
+					incu_chi  = incu_chi  + _incu_chi,
+					incu_otro = incu_otro + _incu_otro,
+					incu_ext  = incu_ext  + _incu_ext
+              WHERE cod_ramo  = _cod_ramo
+                AND orden2    = 1;
+
+          END EXCEPTION
+          INSERT INTO ramozona
+              VALUES(_cod_ramo,
+			         _orden,
+					 0,
+					 0,
+					 0,
+					 0,
+                     _incu_pma,
+                     _incu_col,
+                     _incu_chi,
+					 _incu_otro,
+					 1,
+					 0,
+					 _incu_ext
+                     );
+	   END
+
+	   IF _cod_ramo = "002"	Or _cod_ramo = "020" Or _cod_ramo = "023" THEN
+
+   {	            LET _dif = 0;
+			   		SELECT sum(incurrido_abierto)
+					  INTO _incurrido_bruto
+					  FROM tmp_inc_cob
+					 WHERE no_reclamo = _no_reclamo;
+
+               LET _dif = v_incurrido_bruto - _incurrido_bruto;
+
+			   IF _dif <> 0.00 THEN
+
+				  UPDATE tmp_inc_cob
+				     SET incurrido_abierto = incurrido_abierto + _dif
+				   WHERE no_reclamo = _no_poliza
+				     AND cod_cobertura = "00113";
+
+			   END IF
+	}
+		   IF _cod_subramo = '001' THEN
+		   		LET _incu_auto_part = _incu_auto_part + v_incurrido_bruto;
+		   ELSE
+		   		LET _incu_auto_come = _incu_auto_come + v_incurrido_bruto;
+		   END IF
+	   END IF
+
+END FOREACH
+
+ LET _cnt_poliza_p = 0;
+ LET _cnt_poliza_c = 0;
+ LET _cnt_auto_p = 0;
+ LET _cnt_auto_c = 0;
+
+--SET DEBUG FILE TO "sp_pro178.trc";
+--trace on;
+
+
+FOREACH WITH HOLD
+   SELECT no_poliza,
+   		  cod_ramo,
+   		  cod_subramo
+     INTO _no_poliza,
+     	  v_cod_ramo,
+     	  v_cod_subramo
+     FROM temp_perfil
+    WHERE seleccionado = 1
+
+    SELECT nueva_renov,
+	       vigencia_inic
+      INTO _nueva_renov,
+	       _vigencia_inic
+      FROM emipomae
+     WHERE no_poliza = _no_poliza;
+
+	select count(*)
+	  into _cantidad
+	  from emipouni
+	 where no_poliza = _no_poliza;
+
+	--
+	let li_dia = day(_vigencia_inic);
+	let li_mes = month(_vigencia_inic);
+	let li_anio = year(_vigencia_inic);
+
+	If li_mes = 2 Then
+	If li_dia > 28 Then
+		let li_dia = 28;
+	    	let _vigencia_inic = mdy(li_mes, li_dia, li_anio);
+	else
+		let _vigencia_inic = mdy(li_mes, li_dia, li_anio);
+	End If
+	else
+	let _vigencia_inic = mdy(li_mes, li_dia, li_anio);
+	End If
+	--
+
+   LET _vig_fin_vida = _vigencia_inic + 1 UNITS YEAR;
+
+   IF v_cod_ramo = "019" AND _nueva_renov = "N" THEN--AND _vig_fin_vida >= _fecha2 THEN
+   --
+     UPDATE ramosubr2
+        SET cnt_polizas  = cnt_polizas + 1
+      WHERE cod_ramo     = v_cod_ramo
+        AND cod_subramo  = "001";
+
+	UPDATE ramosubr2
+	   SET cnt_autos   = cnt_autos + _cantidad
+	 WHERE cod_ramo      = v_cod_ramo
+	   AND cod_subramo   = "001";
+   END IF
+
+   IF v_cod_ramo = "019" AND _nueva_renov = "R" THEN --AND _vig_fin_vida < _fecha2 THEN
+   --
+     UPDATE ramosubr2
+        SET cnt_polizas  = cnt_polizas + 1
+      WHERE cod_ramo     = v_cod_ramo
+        AND cod_subramo  = "002";
+
+	UPDATE ramosubr2
+	   SET cnt_autos   = cnt_autos + _cantidad
+	 WHERE cod_ramo      = v_cod_ramo
+	   AND cod_subramo   = "002";
+   END IF
+
+    IF v_cod_ramo = '004' OR v_cod_ramo = '018' THEN
+		select count(*)
+		  into _cantidad
+		  from emipouni
+		 where no_poliza = _no_poliza;
+
+		if _cantidad > 1 then
+	     UPDATE ramosubr2
+            SET cnt_polizas  = cnt_polizas + 1
+	      WHERE cod_ramo     = v_cod_ramo
+	        AND cod_subramo  = "002";
+
+		 UPDATE ramosubr2
+	        SET cnt_autos   = cnt_autos + _cantidad
+		  WHERE cod_ramo      = v_cod_ramo
+		    AND cod_subramo   = "002";
+		else
+	     UPDATE ramosubr2
+            SET cnt_polizas  = cnt_polizas + 1
+	      WHERE cod_ramo     = v_cod_ramo
+	        AND cod_subramo  = "001";
+
+		 UPDATE ramosubr2
+	        SET cnt_autos   = cnt_autos + _cantidad
+		  WHERE cod_ramo      = v_cod_ramo
+		    AND cod_subramo   = "001";
+		end if
+    END IF
+
+    IF v_cod_ramo = '002' THEN
+	    let _cnt_r = 0;
+		let _cnt_i = 0;
+		let _cnt_e = 0;
+		
+		select count(*)
+		  into _cnt_r
+		  from endeduni a, endedmae b
+		 where a.no_poliza = b.no_poliza
+		   and a.no_endoso = b.no_endoso
+		   and b.no_poliza = _no_poliza
+		   and b.periodo <= a_periodo
+		   and b.cod_endomov = '011';
+			   
+		select count(*)
+		  into _cnt_i
+		  from endeduni a, endedmae b
+		 where a.no_poliza = b.no_poliza
+		   and a.no_endoso = b.no_endoso
+		   and b.no_poliza = _no_poliza
+		   and b.periodo <= a_periodo
+		   and b.cod_endomov = '004';
+
+		select count(*)
+		  into _cnt_e
+		  from endeduni a, endedmae b
+		 where a.no_poliza = b.no_poliza
+		   and a.no_endoso = b.no_endoso
+		   and b.no_poliza = _no_poliza
+		   and b.periodo <= a_periodo
+		   and b.cod_endomov = '005';
+		   
+		let _cantidad = _cnt_r + _cnt_i - _cnt_e;		   
+			 
+--		select count(*)
+--		  into _cantidad
+--		  from emipouni
+--		 where no_poliza = _no_poliza;
+
+		 IF v_cod_subramo = '001' THEN
+		 	LET _cnt_poliza_p    = _cnt_poliza_p + 1;
+			LET _cnt_auto_p	= _cnt_auto_p + _cantidad;
+		 ELSE
+		 	LET _cnt_poliza_c    = _cnt_poliza_c + 1;
+			LET _cnt_auto_c	= _cnt_auto_c + _cantidad;
+		 END IF
+	else
+	/**/
+		select count(*)
+		  into _cantidad
+		  from emipouni
+		 where no_poliza = _no_poliza;
+		BEGIN
+			ON EXCEPTION IN(-239)
+				UPDATE temp_cant_uni
+				   SET cant_unidad   = cant_unidad + _cantidad
+				 WHERE cod_ramo      = v_cod_ramo
+				   AND cod_subramo   = v_cod_subramo;
+
+			END EXCEPTION
+			INSERT INTO temp_cant_uni
+				VALUES(v_cod_ramo,
+						v_cod_subramo,
+						_cantidad
+						);
+		END
+	/**/
+	END IF
+   BEGIN
+      ON EXCEPTION IN(-239)
+         UPDATE temp_perfil1
+            SET cant_polizas   = cant_polizas + 1
+          WHERE cod_ramo       = v_cod_ramo
+            AND cod_subramo    = v_cod_subramo;
+
+      END EXCEPTION
+      INSERT INTO temp_perfil1
+          VALUES(v_cod_ramo,
+                 v_cod_subramo,
+                 1
+                 );
+   END
+
+
+END FOREACH
+
+
+--SET DEBUG FILE TO "sp_pro178.trc";
+--trace on;
+
+{FOREACH
+	SELECT cod_ramo,
+		   no_reclamo
+	  INTO _cod_ramo,
+		   _no_reclamo
+	  FROM tmp_sinis
+	 WHERE seleccionado = 1
+
+	SELECT no_poliza
+	  INTO _no_poliza
+	  FROM recrcmae
+	 WHERE no_reclamo = _no_reclamo;
+
+    SELECT nueva_renov,
+		   cod_subramo,
+		   vigencia_inic
+      INTO _nueva_renov,
+	       _cod_subramo,
+		   _vigencia_inic
+      FROM emipomae
+     WHERE no_poliza = _no_poliza;
+
+
+	--
+	let li_dia = day(_vigencia_inic);
+	let li_mes = month(_vigencia_inic);
+	let li_anio = year(_vigencia_inic);
+
+	If li_mes = 2 Then
+		If li_dia > 28 Then
+			let li_dia = 28;
+		    let _vigencia_inic = mdy(li_mes, li_dia, li_anio);
+		else
+			let _vigencia_inic = mdy(li_mes, li_dia, li_anio);
+		End If
+	else
+		let _vigencia_inic = mdy(li_mes, li_dia, li_anio);
+	End If
+	--
+
+   LET _vig_fin_vida = _vigencia_inic + 1 UNITS YEAR;
+
+    IF _cod_ramo = "003" AND _cod_subramo = "001" THEN
+      UPDATE ramosubr2
+         SET cnt_reclamo  = cnt_reclamo + 1
+       WHERE cod_ramo     = _cod_ramo
+         AND cod_subramo  = _cod_subramo;
+    END IF
+
+    IF _cod_ramo = "003" AND _cod_subramo = "002" THEN
+      UPDATE ramosubr2
+         SET cnt_reclamo  = cnt_reclamo + 1
+       WHERE cod_ramo     = _cod_ramo
+         AND cod_subramo  = _cod_subramo;
+    END IF
+
+   { IF _cod_ramo = "005" AND _cod_subramo = "001" THEN
+      UPDATE ramosubr2
+         SET cnt_reclamo  = cnt_reclamo + 1
+       WHERE cod_ramo     = _cod_ramo
+         AND cod_subramo  = _cod_subramo;
+    END IF}
+
+  {  IF _cod_ramo = "017" AND _cod_subramo = "001" THEN
+      UPDATE ramosubr2
+         SET cnt_reclamo  = cnt_reclamo + 1
+       WHERE cod_ramo     = _cod_ramo
+         AND cod_subramo  = _cod_subramo;
+    END IF
+
+    IF _cod_ramo = "017" AND _cod_subramo = "002" THEN
+      UPDATE ramosubr2
+         SET cnt_reclamo  = cnt_reclamo + 1
+       WHERE cod_ramo     = _cod_ramo
+         AND cod_subramo  = _cod_subramo;
+    END IF
+
+    IF _cod_ramo = "019" AND _vig_fin_vida >= _fecha2 THEN
+    --AND _nueva_renov = "N" THEN
+      UPDATE ramosubr2
+         SET cnt_reclamo  = cnt_reclamo + 1
+       WHERE cod_ramo     = _cod_ramo
+         AND cod_subramo  = "001";
+    END IF
+
+    IF _cod_ramo = "019" AND _vig_fin_vida < _fecha2 THEN
+    --AND _nueva_renov = "R" THEN
+      UPDATE ramosubr2
+         SET cnt_reclamo  = cnt_reclamo + 1
+       WHERE cod_ramo     = _cod_ramo
+         AND cod_subramo  = "002";
+    END IF
+
+    IF _cod_ramo = '004' OR _cod_ramo = '018' THEN
+		select count(*)
+		  into _cantidad
+		  from emipouni
+		 where no_poliza = _no_poliza;
+
+		if _cantidad > 1 then
+	     UPDATE ramosubr2
+            SET cnt_reclamo  = cnt_reclamo + 1
+	      WHERE cod_ramo     = _cod_ramo
+	        AND cod_subramo  = "002";
+		else
+	     UPDATE ramosubr2
+            SET cnt_reclamo  = cnt_reclamo + 1
+	      WHERE cod_ramo     = _cod_ramo
+	        AND cod_subramo  = "001";
+		end if
+    END IF
+
+{    IF _cod_ramo = "001" AND _cod_subramo = "001" THEN
+      UPDATE ramosubr2
+         SET cnt_reclamo  = cnt_reclamo + 1
+       WHERE cod_ramo     = _cod_ramo
+         AND cod_subramo  = _cod_subramo;
+    END IF
+
+    IF _cod_ramo = "001" AND _cod_subramo = "002" THEN
+      UPDATE ramosubr2
+         SET cnt_reclamo  = cnt_reclamo + 1
+       WHERE cod_ramo     = _cod_ramo
+         AND cod_subramo  = _cod_subramo;
+    END IF
+
+    IF _cod_ramo = "001" AND _cod_subramo = "003" THEN
+      UPDATE ramosubr2
+         SET cnt_reclamo  = cnt_reclamo + 1
+       WHERE cod_ramo     = _cod_ramo
+         AND cod_subramo  = _cod_subramo;
+    END IF
+
+    IF _cod_ramo = "001" AND _cod_subramo = "004" THEN
+      UPDATE ramosubr2
+         SET cnt_reclamo  = cnt_reclamo + 1
+       WHERE cod_ramo     = _cod_ramo
+         AND cod_subramo  = '002';
+    END IF
+}
+    --> Se cambia por si se incluyen otros subramos
+{    IF _cod_ramo = "001" THEN
+	  IF _cod_subramo IN ("001", "002", "003") THEN
+	      UPDATE ramosubr2
+	         SET cnt_reclamo  = cnt_reclamo + 1
+	       WHERE cod_ramo     = _cod_ramo
+	         AND cod_subramo  = _cod_subramo;
+	  ELSE
+	      UPDATE ramosubr2
+	         SET cnt_reclamo  = cnt_reclamo + 1
+	       WHERE cod_ramo     = _cod_ramo
+	         AND cod_subramo  = '002';
+	  END IF
+    END IF
+
+
+    IF _cod_ramo = "014" OR _cod_ramo = "013" THEN
+      UPDATE ramosubr2
+         SET cnt_reclamo  = cnt_reclamo + 1
+       WHERE cod_ramo     = "010"
+         AND cod_subramo  = "001";
+    END IF
+
+    IF _cod_ramo = "010" THEN
+      UPDATE ramosubr2
+         SET cnt_reclamo  = cnt_reclamo + 1
+       WHERE cod_ramo     = "010"
+         AND cod_subramo  = "002";
+    END IF
+
+    IF _cod_ramo = "012" THEN
+      UPDATE ramosubr2
+         SET cnt_reclamo  = cnt_reclamo + 1
+       WHERE cod_ramo     = "010"
+         AND cod_subramo  = "003";
+    END IF
+
+    IF _cod_ramo = "011" THEN
+      UPDATE ramosubr2
+         SET cnt_reclamo  = cnt_reclamo + 1
+       WHERE cod_ramo     = "010"
+         AND cod_subramo  = "004";
+    END IF
+
+    IF _cod_ramo = "022" THEN
+      UPDATE ramosubr2
+         SET cnt_reclamo  = cnt_reclamo + 1
+       WHERE cod_ramo     = "010"
+         AND cod_subramo  = "005";
+    END IF
+
+    IF _cod_ramo = "006" THEN
+      UPDATE ramosubr2
+         SET cnt_reclamo  = cnt_reclamo + 1
+       WHERE cod_ramo     = "011"
+         AND cod_subramo  = "001";
+    END IF
+
+    IF _cod_ramo = "005" THEN
+      UPDATE ramosubr2
+         SET cnt_reclamo  = cnt_reclamo + 1
+       WHERE cod_ramo     = "011"
+         AND cod_subramo  = "002";
+    END IF
+
+    IF _cod_ramo = "015" OR _cod_ramo = "007" THEN
+      UPDATE ramosubr2
+         SET cnt_reclamo  = cnt_reclamo + 1
+       WHERE cod_ramo     = "011"
+         AND cod_subramo  = "005";
+    END IF
+
+    IF _cod_ramo = "008" THEN
+      IF _cod_subramo = "002" OR _cod_subramo = "003" OR _cod_subramo = "018" THEN
+	      UPDATE ramosubr2
+	         SET cnt_reclamo  = cnt_reclamo + 1
+	       WHERE cod_ramo     = "008"
+	         AND cod_subramo  = "001";
+	  ELSE
+	      UPDATE ramosubr2
+	         SET cnt_reclamo  = cnt_reclamo + 1
+	       WHERE cod_ramo     = "008"
+	         AND cod_subramo  = "002";
+	  END IF
+	END IF
+
+	   -- Codificacion primas por cobertura
+ 	   IF _cod_ramo = "002" Or _cod_ramo = "020" THEN
+   --	       IF _cod_subramo = "001" OR _cod_subramo = "002" THEN
+
+			   IF _cod_subramo = '001' THEN
+					LET _cnt_incu_p	= _cnt_incu_p + 1;
+			   ELSE
+					LET _cnt_incu_c	= _cnt_incu_c + 1;
+			   END IF
+
+		   --END IF
+  	   END IF
+
+END FOREACH
+}
+
+
+FOREACH
+   SELECT cod_ramo
+     INTO v_cod_ramo
+     FROM temp_ramo
+	WHERE cod_ramo <> "019"
+	  AND cod_ramo <> "018"
+	  AND cod_ramo <> "004"
+
+  	LET _prima_suscrita = 0;
+  	LET _cnt_reclamo = 0;
+  	LET v_incurrido_bruto = 0;
+
+   IF v_cod_ramo = '020' THEN
+	LET v_cod_ramo = '002';
+   END IF
+
+   SELECT SUM(cant_polizas)
+     INTO v_cant_polizas
+     FROM temp_perfil1
+    WHERE cod_ramo = v_cod_ramo;
+
+   SELECT SUM(cant_unidad)
+     INTO _cant_unidad
+     FROM temp_cant_uni
+    WHERE cod_ramo = v_cod_ramo;
+
+   SELECT SUM(prima_suscrita)
+     INTO _prima_suscrita
+     FROM temp_perfil2
+    WHERE cod_ramo    = v_cod_ramo;
+
+	SELECT SUM(incurrido_bruto)
+	   INTO	v_incurrido_bruto
+	   FROM	tmp_siniest
+	  WHERE seleccionado = 1
+	    AND cod_ramo = v_cod_ramo;
+
+	SELECT COUNT(numrecla)
+	   INTO	_cnt_reclamo
+	   FROM	tmp_sinis
+	  WHERE seleccionado = 1
+	    AND cod_ramo = v_cod_ramo;
+
+  IF _prima_suscrita IS NULL THEN
+  	LET _prima_suscrita = 0;
+  END IF
+
+  IF _cnt_reclamo IS NULL THEN
+  	LET _cnt_reclamo = 0;
+  END IF
+
+  IF v_incurrido_bruto IS NULL THEN
+  	LET v_incurrido_bruto = 0;
+  END IF
+
+  IF v_cant_polizas IS NULL THEN
+  	LET v_cant_polizas = 0;
+  END IF
+
+  IF _cant_unidad IS NULL THEN
+  	LET _cant_unidad = 0;
+  END IF
+
+   IF v_cod_ramo = "003" THEN
+
+	   SELECT SUM(cant_polizas)
+	     INTO v_cant_polizas
+	     FROM temp_perfil1
+	    WHERE cod_ramo    = v_cod_ramo
+	      AND cod_subramo = "001";
+
+	   SELECT SUM(cant_unidad)
+	     INTO _cant_unidad
+	     FROM temp_cant_uni
+	    WHERE cod_ramo    = v_cod_ramo
+	      AND cod_subramo = "001";
+
+	   SELECT SUM(prima_suscrita)
+	     INTO _prima_suscrita
+	     FROM temp_perfil2
+	    WHERE cod_ramo    = v_cod_ramo
+	      AND cod_subramo = "001";
+
+		  IF _prima_suscrita IS NULL THEN
+		  	LET _prima_suscrita = 0;
+		  END IF
+
+		  IF v_cant_polizas IS NULL THEN
+		  	LET v_cant_polizas = 0;
+		  END IF
+
+	   UPDATE ramosubr2
+          SET cnt_polizas 	 = v_cant_polizas,
+	   		  prima_suscrita = _prima_suscrita,
+			  cnt_autos      = _cant_unidad
+        WHERE cod_ramo     	 = v_cod_ramo
+          AND cod_subramo    = "001";
+
+	   SELECT SUM(cant_polizas)
+	     INTO v_cant_polizas
+	     FROM temp_perfil1
+	    WHERE cod_ramo    = v_cod_ramo
+	      AND cod_subramo <> "001";
+
+	   SELECT SUM(cant_unidad)
+	     INTO _cant_unidad
+	     FROM temp_cant_uni
+	    WHERE cod_ramo    = v_cod_ramo
+	      AND cod_subramo  <> "001";
+
+	   SELECT SUM(prima_suscrita)
+	     INTO _prima_suscrita
+	     FROM temp_perfil2
+	    WHERE cod_ramo    = v_cod_ramo
+	      AND cod_subramo <> "001";
+
+	  IF _prima_suscrita IS NULL THEN
+	  	LET _prima_suscrita = 0;
+	  END IF
+
+	  IF v_cant_polizas IS NULL THEN
+	  	LET v_cant_polizas = 0;
+	  END IF
+
+	   UPDATE ramosubr2
+          SET cnt_polizas  = v_cant_polizas,
+	     	  prima_suscrita = _prima_suscrita,
+			  cnt_autos      = _cant_unidad
+        WHERE cod_ramo     = v_cod_ramo
+          AND cod_subramo  = "002";
+
+   END IF
+
+   IF v_cod_ramo = "017" THEN
+
+	   SELECT SUM(cant_polizas)
+	     INTO v_cant_polizas
+	     FROM temp_perfil1
+	    WHERE cod_ramo    = v_cod_ramo
+	      AND cod_subramo = "001";
+
+	   SELECT SUM(prima_suscrita)
+	     INTO _prima_suscrita
+	     FROM temp_perfil2
+	    WHERE cod_ramo    = v_cod_ramo
+	      AND cod_subramo = "001";
+
+       SELECT SUM(cant_unidad)
+	     INTO _cant_unidad
+	     FROM temp_cant_uni
+	    WHERE cod_ramo    = v_cod_ramo
+	      AND cod_subramo = "001";
+
+	  IF _prima_suscrita IS NULL THEN
+	  	LET _prima_suscrita = 0;
+	  END IF
+
+	  IF v_cant_polizas IS NULL THEN
+	  	LET v_cant_polizas = 0;
+	  END IF
+
+	   UPDATE ramosubr2
+          SET cnt_polizas  	 	= v_cant_polizas,
+			  prima_suscrita 	= _prima_suscrita,
+			  cnt_autos 		= _cant_unidad
+        WHERE cod_ramo     = v_cod_ramo
+          AND cod_subramo  = "001";
+
+	   SELECT SUM(cant_polizas)
+	     INTO v_cant_polizas
+	     FROM temp_perfil1
+	    WHERE cod_ramo    = v_cod_ramo
+	      AND cod_subramo = "002";
+
+	   SELECT SUM(prima_suscrita)
+	     INTO _prima_suscrita
+	     FROM temp_perfil2
+	    WHERE cod_ramo    = v_cod_ramo
+	      AND cod_subramo = "002";
+
+	   SELECT SUM(cant_unidad)
+	     INTO _cant_unidad
+	     FROM temp_cant_uni
+	    WHERE cod_ramo    = v_cod_ramo
+	      AND cod_subramo = "002";
+
+	  IF _prima_suscrita IS NULL THEN
+	  	LET _prima_suscrita = 0;
+	  END IF
+
+	  IF v_cant_polizas IS NULL THEN
+	  	LET v_cant_polizas = 0;
+	  END IF
+
+	   UPDATE ramosubr2
+          SET cnt_polizas	   = v_cant_polizas,
+	   		  prima_suscrita   = _prima_suscrita,
+			  cnt_autos  	   = _cant_unidad
+        WHERE cod_ramo     	   = v_cod_ramo
+          AND cod_subramo  	   = "002";
+
+   END IF
+
+   IF v_cod_ramo = "005" THEN
+
+	   SELECT SUM(cant_polizas)
+	     INTO v_cant_polizas
+	     FROM temp_perfil1
+	    WHERE cod_ramo    = v_cod_ramo
+	      AND cod_subramo = "001";
+
+	   SELECT SUM(prima_suscrita)
+	     INTO _prima_suscrita
+	     FROM temp_perfil2
+	    WHERE cod_ramo    = v_cod_ramo
+	      AND cod_subramo = "001";
+
+	   SELECT SUM(cant_unidad)
+	     INTO _cant_unidad
+	     FROM temp_cant_uni
+	    WHERE cod_ramo    = v_cod_ramo
+	      AND cod_subramo = "001";
+
+	  IF _prima_suscrita IS NULL THEN
+	  	LET _prima_suscrita = 0;
+	  END IF
+
+	  IF v_cant_polizas IS NULL THEN
+	  	LET v_cant_polizas = 0;
+	  END IF
+
+	  IF _cant_unidad IS NULL THEN
+	  	LET _cant_unidad = 0;
+	  END IF
+
+	   UPDATE ramosubr2
+          SET cnt_polizas  = v_cant_polizas,
+	   		  prima_suscrita = _prima_suscrita,
+			  cnt_autos = _cant_unidad
+        WHERE cod_ramo     = "011"
+          AND cod_subramo  = "002";
+   END IF
+
+   IF v_cod_ramo = "001" THEN
+
+	   SELECT SUM(cant_polizas)
+	     INTO v_cant_polizas
+	     FROM temp_perfil1
+	    WHERE cod_ramo    = v_cod_ramo
+	      AND cod_subramo = "001";
+
+	   SELECT SUM(prima_suscrita)
+	     INTO _prima_suscrita
+	     FROM temp_perfil2
+	    WHERE cod_ramo    = v_cod_ramo
+	      AND cod_subramo = "001";
+
+	   SELECT SUM(cant_unidad)
+	     INTO _cant_unidad
+	     FROM temp_cant_uni
+	    WHERE cod_ramo    = v_cod_ramo
+	      AND cod_subramo = "001";
+
+	   IF _prima_suscrita IS NULL THEN
+	    	LET _prima_suscrita = 0;
+	   END IF
+
+	   IF v_cant_polizas IS NULL THEN
+	  		LET v_cant_polizas = 0;
+	   END IF
+
+	   IF _cant_unidad IS NULL THEN
+	  		LET _cant_unidad = 0;
+	   END IF
+
+	   UPDATE ramosubr2
+          SET cnt_polizas  = v_cant_polizas,
+	   		  prima_suscrita = _prima_suscrita,
+			  cnt_autos      = _cant_unidad
+        WHERE cod_ramo     = v_cod_ramo
+          AND cod_subramo  = "001";
+
+	   SELECT SUM(cant_polizas)
+	     INTO v_cant_polizas
+	     FROM temp_perfil1
+	    WHERE cod_ramo    = v_cod_ramo
+	      AND cod_subramo = "002";
+
+	   SELECT SUM(prima_suscrita)
+	     INTO _prima_suscrita
+	     FROM temp_perfil2
+	    WHERE cod_ramo    = v_cod_ramo
+	      AND cod_subramo = "002";
+
+	   SELECT SUM(cant_unidad)
+	     INTO _cant_unidad
+	     FROM temp_cant_uni
+	    WHERE cod_ramo    = v_cod_ramo
+	      AND cod_subramo = "002";
+
+	   IF _prima_suscrita IS NULL THEN
+	    	LET _prima_suscrita = 0;
+	   END IF
+
+	  IF v_cant_polizas IS NULL THEN
+	  	LET v_cant_polizas = 0;
+	  END IF
+
+	   UPDATE ramosubr2
+          SET cnt_polizas 	 = v_cant_polizas,
+	   		  prima_suscrita = _prima_suscrita,
+			  cnt_autos      = _cant_unidad
+        WHERE cod_ramo       = v_cod_ramo
+          AND cod_subramo    = "002";
+
+	   SELECT SUM(cant_polizas)
+	     INTO v_cant_polizas
+	     FROM temp_perfil1
+	    WHERE cod_ramo    = v_cod_ramo
+	      AND cod_subramo not in ("001","002");
+
+	   SELECT SUM(prima_suscrita)
+	     INTO _prima_suscrita
+	     FROM temp_perfil2
+	    WHERE cod_ramo    = v_cod_ramo
+	      AND cod_subramo not in ("001","002");
+
+	   SELECT SUM(cant_unidad)
+	     INTO _cant_unidad
+	     FROM temp_cant_uni
+	    WHERE cod_ramo    = v_cod_ramo
+	      AND cod_subramo not in ("001","002");
+
+	   IF _prima_suscrita IS NULL THEN
+	    	LET _prima_suscrita = 0;
+	   END IF
+
+	  IF v_cant_polizas IS NULL THEN
+	  		LET v_cant_polizas = 0;
+	  END IF
+
+	   UPDATE ramosubr2
+          SET cnt_polizas  		= v_cant_polizas,
+	   		  prima_suscrita 	= _prima_suscrita,
+			  cnt_autos     	= _cant_unidad
+        WHERE cod_ramo     		= v_cod_ramo
+          AND cod_subramo  		= "003";
+   END IF
+{   IF v_cod_ramo = "004" THEN
+
+       UPDATE ramosubr2
+	      SET cnt_polizas     = v_cant_polizas,
+	     	  prima_suscrita  = _prima_suscrita,
+	     	  incurrido_bruto = incurrido_bruto + v_incurrido_bruto,
+			  cnt_reclamo     = _cnt_reclamo
+	    WHERE cod_ramo     = v_cod_ramo
+	      AND cod_subramo  = "001";
+
+   ELIF	v_cod_ramo = "018" THEN
+     UPDATE ramosubr2
+        SET cnt_polizas  = v_cant_polizas,
+			prima_suscrita = _prima_suscrita,
+	     	incurrido_bruto = incurrido_bruto + v_incurrido_bruto,
+			cnt_reclamo     = _cnt_reclamo
+      WHERE cod_ramo     = v_cod_ramo
+        AND cod_subramo  = "001";}
+--   ELIF	v_cod_ramo = "016" THEN
+
+   IF v_cod_ramo = "016" THEN
+     UPDATE ramosubr2
+        SET cnt_polizas     = v_cant_polizas,
+			prima_suscrita  = _prima_suscrita,
+     	    incurrido_bruto = incurrido_bruto + v_incurrido_bruto,
+			cnt_reclamo     = _cnt_reclamo,
+			cnt_autos       = _cant_unidad
+      WHERE cod_ramo     = v_cod_ramo
+        AND cod_subramo  = "001";
+
+ {  ELIF	v_cod_ramo = "001" THEN
+     UPDATE ramosubr2
+        SET cnt_polizas  = v_cant_polizas,
+			prima_suscrita = _prima_suscrita,
+     	    incurrido_bruto = incurrido_bruto + v_incurrido_bruto,
+			cnt_reclamo     = _cnt_reclamo
+      WHERE cod_ramo     = v_cod_ramo
+        AND cod_subramo  = "001";}
+   ELIF	v_cod_ramo = "009" THEN
+     UPDATE ramosubr2
+        SET cnt_polizas  = v_cant_polizas,
+    	    prima_suscrita = _prima_suscrita,
+	     	incurrido_bruto = incurrido_bruto + v_incurrido_bruto,
+			cnt_reclamo     = _cnt_reclamo,
+			cnt_autos       = _cant_unidad
+      WHERE cod_ramo     = v_cod_ramo
+        AND cod_subramo  = "001";
+   ELIF	v_cod_ramo = "002" THEN
+     UPDATE ramosubr2
+        SET cnt_polizas  = v_cant_polizas,
+     	    prima_suscrita = _prima_suscrita,
+     	    incurrido_bruto = incurrido_bruto + v_incurrido_bruto,
+			cnt_reclamo     = _cnt_reclamo,
+			cnt_autos       = _cnt_auto_p + _cnt_auto_c
+      WHERE cod_ramo     = v_cod_ramo
+        AND cod_subramo  = "001";
+
+   ELIF	v_cod_ramo = "006" THEN
+     UPDATE ramosubr2
+        SET cnt_polizas  = v_cant_polizas,
+     	    prima_suscrita = _prima_suscrita,
+			cnt_autos      = _cant_unidad
+      WHERE cod_ramo     = "011"
+        AND cod_subramo  = "001";
+   ELIF	v_cod_ramo = "008" THEN
+      IF _cod_subramo = "002" OR _cod_subramo = "003" OR _cod_subramo = "018" THEN
+	     UPDATE ramosubr2
+	        SET cnt_polizas  = v_cant_polizas,
+	     	    prima_suscrita = _prima_suscrita,
+				cnt_autos      = _cant_unidad
+	      WHERE cod_ramo     = v_cod_ramo
+	        AND cod_subramo  = "001";
+	   ELSE
+	     UPDATE ramosubr2
+	        SET cnt_polizas  = v_cant_polizas,
+	     	    prima_suscrita = _prima_suscrita,
+				cnt_autos      = _cant_unidad
+	      WHERE cod_ramo     = v_cod_ramo
+	        AND cod_subramo  = "002";
+	   END IF
+   ELIF	v_cod_ramo = "010" THEN
+     UPDATE ramosubr2
+        SET cnt_polizas  = v_cant_polizas,
+     	    prima_suscrita  = _prima_suscrita,
+			cnt_autos      = _cant_unidad
+      WHERE cod_ramo     = v_cod_ramo
+        AND cod_subramo  = "002";
+   ELIF	v_cod_ramo = "011" THEN
+     UPDATE ramosubr2
+        SET cnt_polizas  = cnt_polizas + v_cant_polizas,
+     	    prima_suscrita = prima_suscrita + _prima_suscrita,
+			cnt_autos      = cnt_autos + _cant_unidad
+      WHERE cod_ramo     = "010"
+	    AND cod_subramo  = "004";
+   ELIF	v_cod_ramo = "012" THEN
+     UPDATE ramosubr2
+        SET cnt_polizas  = cnt_polizas + v_cant_polizas,
+     	    prima_suscrita = prima_suscrita + _prima_suscrita,
+			cnt_autos      = cnt_autos + _cant_unidad
+      WHERE cod_ramo     = "010"
+        AND cod_subramo  = "003";
+   ELIF	v_cod_ramo = "013" THEN
+     UPDATE ramosubr2
+        SET cnt_polizas  = cnt_polizas + v_cant_polizas,
+     	    prima_suscrita = prima_suscrita + _prima_suscrita,
+			cnt_autos      = cnt_autos + _cant_unidad
+      WHERE cod_ramo     = "010"
+        AND cod_subramo  = "001";
+   ELIF	v_cod_ramo = "014" THEN
+     UPDATE ramosubr2
+        SET cnt_polizas  = cnt_polizas + v_cant_polizas,
+     	    prima_suscrita = prima_suscrita + _prima_suscrita,
+			cnt_autos      = cnt_autos + _cant_unidad
+      WHERE cod_ramo     = "010"
+        AND cod_subramo  = "001";
+   ELIF	v_cod_ramo = "022" THEN
+     UPDATE ramosubr2
+        SET cnt_polizas  = cnt_polizas + v_cant_polizas,
+     	    prima_suscrita = prima_suscrita + _prima_suscrita,
+			cnt_autos      = cnt_autos + _cant_unidad
+      WHERE cod_ramo     = "010"
+        AND cod_subramo  = "005";
+
+   ELIF	v_cod_ramo = "015" THEN
+     UPDATE ramosubr2
+        SET cnt_polizas    = v_cant_polizas,
+     	    prima_suscrita = _prima_suscrita,
+			cnt_autos      = _cant_unidad
+      WHERE cod_ramo     = "011"
+        AND cod_subramo  = "005";
+
+   ELIF	v_cod_ramo = "007" THEN
+     UPDATE ramosubr2
+        SET cnt_polizas  = cnt_polizas + v_cant_polizas,
+    	    prima_suscrita = prima_suscrita + _prima_suscrita,
+			cnt_autos      = cnt_autos + _cant_unidad
+      WHERE cod_ramo     = "011"
+	    AND cod_subramo  = "005";
+   END IF
+
+END FOREACH
+
+FOREACH
+	SELECT sum(cnt_polizas),
+	       sum(cnt_asegurados),
+		   sum(casos_cerrados),
+		   cod_ramo,
+		   cod_subramo
+	  INTO _cantidad,
+	       _cant_unidad,
+		   _cnt_reclamo,
+		   _cod_ramo,
+		   _cod_subramo
+	  FROM ramosubrh
+	 WHERE periodo = a_periodo
+	GROUP BY cod_ramo, cod_subramo
+	
+	if _cod_ramo not in ('010','015','005','006') then
+		 UPDATE ramosubr2
+			SET cnt_polizas  = _cantidad,
+			    cnt_autos    = _cant_unidad,
+				cnt_reclamo  = _cnt_reclamo
+		  WHERE cod_ramo     = _cod_ramo
+			AND cod_subramo  = _cod_subramo;
+	else
+		if _cod_ramo = '010' then
+			if _cod_subramo <> '006' then
+				UPDATE ramosubr2
+				   SET cnt_polizas  = _cantidad,
+			           cnt_autos    = _cant_unidad,
+				       cnt_reclamo  = _cnt_reclamo
+				 WHERE cod_ramo     = _cod_ramo
+				   AND cod_subramo  = _cod_subramo;
+			else
+				UPDATE ramosubr2
+				   SET cnt_polizas  = _cantidad,
+			           cnt_autos    = _cant_unidad,
+				       cnt_reclamo  = _cnt_reclamo
+				 WHERE cod_ramo     = '011'
+				   AND cod_subramo  = '005';
+			end if	
+		elif _cod_ramo = '015' then		   
+			UPDATE ramosubr2
+			   SET cnt_polizas  = cnt_polizas +_cantidad,
+			       cnt_autos    = cnt_autos + _cant_unidad,
+				   cnt_reclamo  = cnt_reclamo + _cnt_reclamo
+			 WHERE cod_ramo     = '011'
+			   AND cod_subramo  = '005';
+		elif _cod_ramo = '005' then
+			UPDATE ramosubr2
+			   SET cnt_polizas  = _cantidad,
+			       cnt_autos    = _cant_unidad,
+				   cnt_reclamo  = _cnt_reclamo
+			 WHERE cod_ramo     = '011'
+			   AND cod_subramo  = '002';
+		elif _cod_ramo = '006' then
+			UPDATE ramosubr2
+			   SET cnt_polizas  = _cantidad,
+			       cnt_autos    = _cant_unidad,
+				   cnt_reclamo  = _cnt_reclamo
+			 WHERE cod_ramo     = '011'
+			   AND cod_subramo  = '001';
+		end if
+	end if	
+END FOREACH
+
+SELECT cnt_polizas,
+       cnt_autos
+  INTO _cantidad,
+       _cant_unidad
+  FROM ramosubr2
+ WHERE cod_ramo = '002';
+
+--SET DEBUG FILE TO "sp_pro567.trc";-- Nombre de la Compania
+--TRACE ON;
+
+let _cant_unidad = _cant_unidad; 
+let _cnt_auto_p = _cnt_auto_p; 
+let _cnt_auto_c = _cnt_auto_c; 
+let _cantidad = _cantidad; 
+let _cnt_poliza_p = _cnt_poliza_p; 
+let _cnt_poliza_c = _cnt_poliza_c; 
+ 
+IF _cantidad > _cnt_poliza_p + _cnt_poliza_c THEN
+	LET _cnt_poliza_p = _cnt_poliza_p + (_cantidad - _cnt_poliza_p - _cnt_poliza_c);
+ELIF _cantidad < _cnt_poliza_p + _cnt_poliza_c THEN
+	LET _cnt_poliza_p = _cnt_poliza_p - (_cnt_poliza_p + _cnt_poliza_c - _cantidad);
+END IF	
+
+IF _cant_unidad > _cnt_auto_p + _cnt_auto_c THEN
+	LET _cnt_auto_p = _cnt_auto_p + (_cant_unidad - _cnt_auto_p - _cnt_auto_c);
+--	LET _cnt_auto_p = _cnt_auto_p + (_cant_unidad - _cnt_auto_p + _cnt_auto_c);	
+ELIF _cant_unidad < _cnt_auto_p + _cnt_auto_c THEN
+	LET _cnt_auto_p = _cnt_auto_p - (_cnt_auto_p + _cnt_auto_c - _cant_unidad);
+END IF
+
+--trace off;
+{IF _cant_unidad > _cnt_auto_p + _cnt_auto_c THEN
+	LET _cnt_auto_p = _cnt_auto_p + (_cant_unidad - _cnt_auto_p + _cnt_auto_c);
+ELIF _cant_unidad < _cnt_auto_p + _cnt_auto_c THEN
+	LET _cnt_auto_p = _cnt_auto_p - (_cnt_auto_p + _cnt_auto_c - _cant_unidad);
+END IF
+}
+--SET DEBUG FILE TO "sp_rec178.trc";-- Nombre de la Compania
+--TRACE ON;
+
+SELECT SUM(prima_neta)
+  INTO _prima_neta
+  FROM tmp_cobp
+ WHERE cod_ramo = "002";
+
+SELECT sum(incurrido_abierto)
+  INTO _incurrido_bruto
+  FROM tmp_inc_cob
+ WHERE cod_ramo = "002";
+
+SELECT prima_suscrita,
+       incurrido_bruto
+  INTO _prima_suscrita,
+       v_incurrido_bruto
+  FROM ramosubr2
+ WHERE cod_ramo = '002';
+
+LET _dif = _prima_neta - _prima_suscrita;
+
+   IF _dif > 0.00 THEN
+		let _dif = _dif * -1;
+		INSERT INTO tmp_cobp(
+		no_poliza,
+		no_endoso,
+		cod_cobertura,
+		prima_neta,
+		cod_ramo,
+		cod_subramo
+		)
+		VALUES(
+		_no_poliza,
+        _no_endoso,
+		"00121",
+		_dif,
+		"002",
+		"002"
+		);
+	ELIF _dif < 0.00 THEN
+		let _dif = _dif * -1;
+		INSERT INTO tmp_cobp(
+		no_poliza,
+		no_endoso,
+		cod_cobertura,
+		prima_neta,
+		cod_ramo,
+		cod_subramo
+		)
+		VALUES(
+		_no_poliza,
+        _no_endoso,
+		"00121",
+		_dif,
+		"002",
+		"002"
+		);
+   END IF
+
+LET _dif = _incurrido_bruto - v_incurrido_bruto;
+
+   IF _dif > 0.00 THEN
+		let _dif = _dif * -1;
+		INSERT INTO tmp_inc_cob(
+		cod_cobertura,
+		incurrido_abierto,
+		cod_ramo,
+		cod_subramo
+		)
+		VALUES(
+		"00121",
+		_dif,
+		"002",
+		"001"
+		);
+	ELIF _dif < 0.00 THEN
+		let _dif = _dif * -1;
+		INSERT INTO tmp_inc_cob(
+		cod_cobertura,
+		incurrido_abierto,
+		cod_ramo,
+		cod_subramo
+		)
+		VALUES(
+		"00121",
+		_dif,
+		"002",
+		"002"
+		);
+   END IF
+
+FOREACH
+	SELECT cod_subramo,
+	       cod_cobertura,
+    	   prima_neta
+	  INTO _cod_subramo,
+	       _cod_cobertura,
+	       _prima_neta
+	  FROM tmp_cobp
+	 WHERE cod_ramo = "002"
+
+	IF _cod_subramo <> "001" THEN
+		LET _cod_sub_cob = "002";
+	ELSE
+		LET _cod_sub_cob = "001";
+	END IF
+
+	IF _cod_cobertura in ("00102", "00117", '01382', '01382', '01382', '01382', '01021', '01028', '01299', '01305') THEN -- LESIONES CORPORALES, ASISTENCIA MEDICA
+		LET _orden = 1;
+	ELIF _cod_cobertura in ("00113", "00671", '01022', '01304') THEN -- DAÑOS A LA PROPIEDAD AJENA
+		LET _orden = 2;
+	ELIF _cod_cobertura in ("00121", "00119", "01307") THEN -- COLISION Y VUELCO
+		LET _orden = 3;
+	ELIF _cod_cobertura in ("00606", "00118", "00900", "01306") THEN -- COMPRENSIVO
+		LET _orden = 4;
+	ELIF _cod_cobertura in ("00103", "00901", "01300", "01311") THEN -- ROBO
+		LET _orden = 5;
+	ELSE
+		LET _orden = 6;
+	END IF
+
+	  BEGIN
+	  ON EXCEPTION IN(-239, -268)
+	     UPDATE ramocoberh
+	        SET prima_suscrita  = prima_suscrita + _prima_neta
+	      WHERE cod_ramo   = "002"
+	        AND cod_subramo = _cod_sub_cob
+	        AND cod_cobertura = _cod_cobertura;
+
+	  END EXCEPTION
+	  INSERT INTO ramocoberh
+	      VALUES("002",
+		         _cod_sub_cob,
+				 _cod_cobertura,
+		         _orden,
+	             _prima_neta,
+	             0,
+				 0,
+				 0,
+				 0.00,
+				 0.00,
+				 0,
+				 0,
+				 0,
+				 0
+	             );
+	END
+END FOREACH
+
+FOREACH
+   	SELECT cod_subramo,
+   	       cod_cobertura,
+		   incurrido_abierto
+	  INTO _cod_subramo,
+	       _cod_cobertura,
+	       _incurrido_bruto
+	  FROM tmp_inc_cob
+	 WHERE cod_ramo = "002"
+	  let _cantidad_acu = 0;
+/*	foreach
+		SELECT no_poliza
+		  INTO _no_poliza
+		  FROM tmp_cobp
+		 WHERE cod_cobertura 	= _cod_cobertura
+		   AND cod_ramo 		= '002'
+		   AND cod_subramo 		= _cod_subramo
+	  GROUP BY 1
+	  ORDER BY 1
+
+	 select count(*)
+	   into _cantidad
+	   from emipouni
+	  where no_poliza = _no_poliza;
+
+	  let _cantidad_acu = _cantidad_acu + _cantidad;
+
+	end foreach*/
+
+   IF _cod_subramo <> "001" THEN
+		LET _cod_sub_cob = "002";
+   ELSE
+		LET _cod_sub_cob = "001";
+   END IF
+
+	IF _cod_cobertura in ("00102", "00117", '01382', '01382', '01382', '01382', '01021', '01028', '01299', '01305') THEN -- LESIONES CORPORALES, ASISTENCIA MEDICA
+		LET _orden = 1;
+	ELIF _cod_cobertura in ("00113", "00671", '01022', '01304') THEN -- DAÑOS A LA PROPIEDAD AJENA
+		LET _orden = 2;
+	ELIF _cod_cobertura in ("00121", "00119", "01307") THEN -- COLISION Y VUELCO
+		LET _orden = 3;
+	ELIF _cod_cobertura in ("00606", "00118", "00900", "01306") THEN -- COMPRENSIVO
+		LET _orden = 4;
+	ELIF _cod_cobertura in ("00103", "00901", "01300", "01311") THEN -- ROBO
+		LET _orden = 5;
+	ELSE
+		LET _orden = 6;
+	END IF
+
+      BEGIN
+      ON EXCEPTION IN(-239, -268)
+         UPDATE ramocoberh
+            SET incurrido_bruto  = incurrido_bruto + _incurrido_bruto
+				--cnt_autos_c = cnt_autos_c + _cantidad_acu
+          WHERE cod_ramo   = "002"
+            AND cod_subramo = _cod_sub_cob
+            AND cod_cobertura = _cod_cobertura;
+
+      END EXCEPTION
+      INSERT INTO ramocoberh
+          VALUES("002",
+		         _cod_sub_cob,
+				 _cod_cobertura,
+		         _orden,
+                 0,
+                 _incurrido_bruto,
+				 0,
+				 0,
+				 0.00,
+				 0.00,
+				 0,
+				 _cantidad_acu,
+				 0,
+				 0
+                 );
+    END
+END FOREACH
+
+ FOREACH
+   SELECT no_poliza,
+          cod_subramo
+	 INTO _no_poliza,
+	      _cod_subramo
+	 FROM temp_perfil
+	WHERE cod_ramo    = '002'
+	
+	if _cod_subramo <> '001' then
+		let _cod_sub_cob = '002';
+	else
+		let _cod_sub_cob = '001';
+	end if
+	
+	foreach 
+		select no_unidad
+		  into _no_unidad
+		  from emipouni
+		 where no_poliza = _no_poliza
+		 
+        foreach
+			SELECT cod_cobertura
+  			  INTO _cod_cobertura
+			  FROM emipocob
+			 WHERE no_poliza = _no_poliza
+			   AND no_unidad = _no_unidad
+			
+			UPDATE ramocoberh
+			   SET cnt_polizas = cnt_polizas + 1
+			 WHERE cod_ramo = '002'
+			   AND cod_subramo = _cod_sub_cob
+			   AND cod_cobertura = _cod_cobertura;
+		end foreach
+		exit foreach;
+	end foreach
+ END FOREACH
+
+{ FOREACH
+	SELECT no_reclamo,
+	       cod_cobertura,
+		   cod_subramo
+	  INTO _no_reclamo,
+	       _cod_cobertura,
+		   _cod_subramo
+	  FROM tmp_inc_cob
+	 WHERE cod_ramo = '002'
+  GROUP BY no_reclamo, cod_cobertura, cod_subramo
+    
+	if _cod_subramo <> '001' then
+		let _cod_sub_cob = '002';
+	else
+		let _cod_sub_cob = '001';
+	end if
+
+	UPDATE ramocoberh
+	   SET cnt_reclamo = cnt_reclamo + 1
+	 WHERE cod_ramo = '002'
+	   AND cod_subramo = _cod_sub_cob
+	   AND cod_cobertura = _cod_cobertura;
+ END FOREACH
+ }
+ 
+ foreach with hold	
+	select no_reclamo
+	  into _no_reclamo
+      from rectrmae
+     where actualizado  = 1
+	   and periodo      >= a_periodo
+	   and periodo      <= a_periodo
+	   and numrecla[1,2] in ('02','20','23')
+	   and (cod_tipotran = '011'
+	   or cerrar_rec = 1)
+	   --and user_added <> 'DEIVID'
+	 group by no_reclamo
+	 order by no_reclamo
+	   
+	SELECT no_poliza
+	  INTO _no_poliza
+	  FROM recrcmae
+	 WHERE no_reclamo = _no_reclamo;
+
+    SELECT nueva_renov,
+		   cod_subramo,
+		   vigencia_inic
+      INTO _nueva_renov,
+	       _cod_subramo,
+		   _vigencia_inic
+      FROM emipomae
+     WHERE no_poliza = _no_poliza;
+	 	 
+	FOREACH
+		SELECT no_tranrec
+	      INTO _no_tranrec
+		  FROM rectrmae
+		 WHERE no_reclamo = _no_reclamo
+		   and actualizado = 1
+		 
+		EXIT FOREACH;
+	END FOREACH
+	
+	FOREACH
+		SELECT cod_cobertura
+		  INTO _cod_cobertura
+		  FROM rectrcob
+		 WHERE no_tranrec = _no_tranrec
+		   
+		 EXIT FOREACH;
+	END FOREACH
+
+
+{	FOREACH
+		SELECT cod_cobertura
+		  INTO _cod_cobertura
+		  FROM recrccob
+		 WHERE no_reclamo = _no_reclamo
+		   
+		 EXIT FOREACH;
+	END FOREACH
+}
+
+	IF _cod_cobertura in ("00102", "00117", '01382', '01382', '01382', '01382', '01021', '01028', '01299', '01305') THEN -- LESIONES CORPORALES, ASISTENCIA MEDICA
+	    LET _cod_cobertura = "00102";
+		LET _orden = 1;
+	ELIF _cod_cobertura in ("00113", "00671", '01022', '01304') THEN -- DAÑOS A LA PROPIEDAD AJENA
+	    LET _cod_cobertura = "00113";
+		LET _orden = 2;
+	ELIF _cod_cobertura in ("00121", "00119", "01307") THEN -- COLISION Y VUELCO
+	    LET _cod_cobertura = "00121";
+		LET _orden = 3;
+	ELIF _cod_cobertura in ("00606", "00118", "00900", "01306") THEN -- COMPRENSIVO
+	    LET _cod_cobertura = "00606";
+		LET _orden = 4;
+	ELIF _cod_cobertura in ("00103", "00901", "01300", "01311") THEN -- ROBO
+	    LET _cod_cobertura = "00103";
+		LET _orden = 5;
+	ELSE
+	    LET _cod_cobertura = "00000";
+		LET _orden = 6;
+	END IF
+
+	if _cod_subramo <> '001' then
+		let _cod_sub_cob = '002';
+		LET _cnt_incu_c	= _cnt_incu_c + 1;
+	else
+		let _cod_sub_cob = '001';
+		LET _cnt_incu_p	= _cnt_incu_p + 1;
+	end if
+	
+     BEGIN
+      ON EXCEPTION IN(-239, -268)
+         UPDATE ramocoberh
+            SET cnt_reclamo = cnt_reclamo + 1
+          WHERE cod_ramo   = "002"
+            AND cod_subramo = _cod_sub_cob
+            AND cod_cobertura = _cod_cobertura;
+
+      END EXCEPTION
+      INSERT INTO ramocoberh
+          VALUES("002",
+		         _cod_sub_cob,
+				 _cod_cobertura,
+		         _orden,
+                 0,
+                 0,
+				 0,
+				 1,
+				 0.00,
+				 0.00,
+				 0,
+				 0,
+				 0,
+				 0
+                 );
+	end
+end foreach		  
+
+ UPDATE ramocoberh
+    SET tot_prima    = _prima_auto_part,
+        tot_incurrido = _incu_auto_part,
+		tot_polizas   = _cnt_poliza_p,
+        tot_reclamo   = _cnt_incu_p,
+		cnt_autos_p   = _cnt_auto_p
+  WHERE cod_ramo   = '002'
+    AND cod_subramo = '001';
+
+ UPDATE ramocoberh
+    SET tot_prima    = _prima_auto_come,
+        tot_incurrido = _incu_auto_come,
+		tot_polizas   = _cnt_poliza_c,
+        tot_reclamo   = _cnt_incu_c,
+		cnt_autos_c   = _cnt_auto_c
+  WHERE cod_ramo   = '002'
+    AND cod_subramo = '002';
+	
+FOREACH
+       SELECT cod_ramo,
+			  cod_subramo,
+			  cnt_polizas,
+			  prima_suscrita,
+			  orden,
+			  incurrido_bruto,
+			  cnt_reclamo,
+			  cnt_autos
+         INTO _cod_ramo,
+			  _cod_subramo,
+			  v_cant_polizas,
+			  _prima_suscrita,
+			  _orden,
+			  v_incurrido_bruto,
+			  _cnt_reclamo,
+			  _cant_unidad
+         FROM ramosubr2
+	 ORDER BY orden,cod_ramo,cod_subramo
+
+       SELECT nombre
+         INTO v_desc_ramo
+         FROM prdramo
+        WHERE cod_ramo = _cod_ramo;
+
+       SELECT nombre
+         INTO v_desc_subramo
+         FROM prdsubra
+        WHERE cod_ramo    = _cod_ramo
+          AND cod_subramo = _cod_subramo;
+
+   IF _cod_ramo = "001" THEN
+		  LET v_desc_ramo = "INCENDIO Y LINEAS ALIADAS";
+			IF _cod_subramo = "001"	THEN
+			  LET v_desc_subramo = "RESIDENCIAL";
+			ELIF _cod_subramo = "002" THEN
+			  LET v_desc_subramo = "COMERCIAL";
+			ELSE
+			  LET v_desc_subramo = "INDUSTRIAL";
+			END IF
+   ELIF _cod_ramo = "009" THEN
+		  LET v_desc_ramo = "TRANSPORTE DE CARGA";
+		  LET v_desc_subramo = "";
+   ELIF _cod_ramo = "004" THEN
+		IF _cod_subramo = "001"	THEN
+		  LET v_desc_subramo = "INDIVIDUAL";
+		ELSE
+		  LET v_desc_subramo = "GRUPO";
+		END IF
+   ELIF _cod_ramo = "018" THEN
+		IF _cod_subramo = "001"	THEN
+		  LET v_desc_subramo = "INDIVIDUAL";
+		ELSE
+		  LET v_desc_subramo = "GRUPO";
+		END IF
+   ELIF _cod_ramo = "016" THEN
+		  LET v_desc_subramo = "";
+   ELIF _cod_ramo = "002" THEN
+		  LET v_desc_subramo = "";
+   ELIF _cod_ramo = "006" THEN
+		  LET v_desc_subramo = "";
+   ELIF _cod_ramo = "008" THEN
+		IF _cod_subramo = "001"	THEN
+		  LET v_desc_subramo = "OFERTA, CUMP. Y SUMI.";
+		ELSE
+		  LET v_desc_subramo = "OTRAS";
+		END IF
+
+   ELIF _cod_ramo = "010" THEN
+		  LET v_desc_ramo = "RAMOS TECNICOS";
+		  LET v_desc_subramo = "";
+		  IF _cod_subramo = "001"	THEN
+			  LET v_desc_subramo = "TRC / TRM";
+		  ELIF _cod_subramo = "002" THEN
+			  LET v_desc_subramo = "EQUIPO ELECTRONICO";
+		  ELIF _cod_subramo = "003" THEN
+			  LET v_desc_subramo = "CALDERA Y MAQUINARIA";
+		  ELIF _cod_subramo = "004" THEN
+			  LET v_desc_subramo = "ROTURA DE MAQUINARIA";
+		  ELSE
+			  LET v_desc_subramo = "EQUIPO PESADO";
+		  END IF
+   ELIF _cod_ramo = "011" THEN
+		  LET v_desc_ramo = "RIESGOS DIVERSOS";
+		  LET v_desc_subramo = "";
+		  IF _cod_subramo = "001"	THEN
+			  LET v_desc_subramo = "RESPONSABILIDAD CIVIL";
+		  ELIF _cod_subramo = "002" THEN
+			  LET v_desc_subramo = "ROBO";
+		  ELIF _cod_subramo = "003" THEN
+			  LET v_desc_subramo = "FIDELIDAD Y DDD";
+		  ELIF _cod_subramo = "004" THEN
+			  LET v_desc_subramo = "BBB";
+		  ELSE
+			  LET v_desc_subramo = "OTROS";
+		  END IF
+   ELIF _cod_ramo = "012" THEN
+		  LET v_desc_ramo = "RAMOS TECNICOS";
+		  LET v_desc_subramo = "";
+   ELIF _cod_ramo = "013" THEN
+		  LET v_desc_ramo = "RAMOS TECNICOS";
+		  LET v_desc_subramo = "";
+   ELIF _cod_ramo = "014" THEN
+		  LET v_desc_ramo = "RAMOS TECNICOS";
+		  LET v_desc_subramo = "";
+   ELIF _cod_ramo = "015" THEN
+		  LET v_desc_ramo = "OTROS";
+		  LET v_desc_subramo = "";
+--   ELIF _cod_ramo = "014" THEN
+--		  LET v_desc_ramo = "OTROS";
+--		  LET v_desc_subramo = "";
+   END IF
+
+       RETURN  v_desc_subramo,
+       		   v_cant_polizas,
+               _prima_suscrita,
+               v_desc_ramo,
+               descr_cia,
+			   _mes,
+			   _orden,
+			   v_incurrido_bruto,
+			   _cnt_reclamo,
+			   _cod_subramo,
+			   _cant_unidad
+               WITH RESUME;
+END FOREACH
+
+
+DROP TABLE temp_perfil;
+DROP TABLE temp_perfil1;
+DROP TABLE temp_perfil2;
+DROP TABLE tmp_prod;
+DROP TABLE temp_ramo;
+DROP TABLE tmp_siniest;
+DROP TABLE tmp_sinis;
+DROP TABLE tmp_cobp;
+DROP TABLE tmp_inc_cob;
+DROP TABLE temp_cant_uni;
+
+--commit work;
+END PROCEDURE 
+                                                               

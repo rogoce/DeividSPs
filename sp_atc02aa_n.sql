@@ -1,0 +1,1331 @@
+-- CARTAS A ASEGURADOS COLECTIVO
+-- Procedimiento que extrae los Saldos de la Poliza
+-- usado en carta declarativa de salud.
+ 
+-- Creado    : 18/01/2008 - Autor: Amado Perez M.
+-- SIS v.2.0 - DEIVID, S.A.
+--execute PROCEDURE sp_atc02aa('001','001','1800-00035-01',2022,'AMADO','00034;',1,'*',3)
+
+DROP PROCEDURE sp_atc02aa;
+CREATE PROCEDURE "informix".sp_atc02aa(
+a_compania     CHAR(3),
+a_sucursal     CHAR(3),
+a_no_documento CHAR(20),
+a_ano          integer, 
+a_usuario      CHAR(10), 
+a_unidad       CHAR(255) DEFAULT '*', 
+a_membrete     SMALLINT  DEFAULT 0, 
+a_monto_uni    CHAR(255) DEFAULT '*',
+a_tipo_rec     smallint  DEFAULT 3)
+RETURNING	CHAR(20),
+			VARCHAR(100), -- PAGADOR
+			VARCHAR(30),  -- CEDULA
+			VARCHAR(100), -- ASEGURADO
+			VARCHAR(50),  -- NOMBRE RAMO
+			DEC(16,2),	  -- FACTURADO
+			DEC(16,2),	  -- MONTO
+			CHAR(1),	  -- TIPO PERSONA
+			CHAR(10),	  -- USUARIO
+			SMALLINT,	  -- AGNO
+			VARCHAR(20),
+			VARCHAR(20),
+			VARCHAR(30),
+			VARCHAR(50),
+			DEC(16,2),	  -- MONTO NO CUBIERTO
+			CHAR(10),
+			DATETIME HOUR TO SECOND,
+			DEC(16,2),
+			DEC(16,2),
+			DEC(16,2),
+			DEC(16,2),
+			DEC(16,2),
+            CHAR(50), -- as cadena_fecha,
+			varchar(50), -- as nombre_subramo,
+			varchar(30), -- as cedula,
+			CHAR(100), -- as periodo_fijo,
+			char(10), -- as no_unidad,
+			varchar(50), -- as nombre_corredor,
+			decimal(16,2), --				as pago_asegurado,			--_pagado_aseg,
+			decimal(16,2), --				as no_cubierto_aseg,			--_no_cubierto_ase,			
+			DEC(16,2);
+
+DEFINE v_fecha		      	DATE;
+DEFINE v_fecha_min        	DATE;
+DEFINE v_fecha_max        	DATE;
+DEFINE _fecha_factura     	DATE;
+DEFINE v_referencia       	CHAR(20);
+DEFINE v_documento        	CHAR(20);
+DEFINE v_monto            	DEC(16,2);
+DEFINE v_prima            	DEC(16,2);
+DEFINE v_saldo            	DEC(16,2);	 
+DEFINE v_periodo          	CHAR(7);
+DEFINE v_cod_endomov      	CHAR(3);
+DEFINE v_cod_tipocan      	CHAR(3);
+DEFINE _cod_tipoprod      	CHAR(3);
+
+DEFINE _no_poliza        	CHAR(10);
+DEFINE _cod_contratante  	CHAR(10);
+DEFINE _cod_pagador      	CHAR(10);
+DEFINE _tipo_fac         	CHAR(30);
+DEFINE _nueva_renov      	CHAR(1);
+DEFINE _tipo_remesa      	CHAR(1);
+DEFINE _no_requis		 	CHAR(10);
+DEFINE _no_remesa		 	CHAR(10);
+DEFINE _pagado           	SMALLINT;
+DEFINE _anulado          	SMALLINT;
+DEFINE _ramo_sis	     	SMALLINT;
+DEFINE _cod_banco        	CHAR(3);
+DEFINE _cod_ramo	     	CHAR(3);
+define _nombre_asegurado 	varchar(100);
+define _nombre_ramo		 	varchar(50);
+define _nombre_pagador   	varchar(100);
+define _flag			 	smallint;
+define _saber_cobro		 	smallint;
+define _saber_reclamo	 	smallint;
+define _sindato			 	smallint;
+define _cod_tipotran    	char(3);
+define _fecha_gasto			date;
+define _periodo				char(7);
+define _no_tranrec			char(10);
+define _no_reclamo			char(10);
+define _numrecla			char(20);
+define _fecha_siniestro		date;
+define _no_unidad			char(10);
+define _no_unidad2			char(5);
+define _gasto_fact			dec(16,2);
+define _pago_prov			dec(16,2);
+define _monto_no_cubierto	dec(16,2);
+define v_fecha_rec_min  	date;
+define v_fecha_rec_max		date;
+define _tipo_persona    	CHAR(1);
+define _cedula          	varchar(30);
+define v_firma_cartas		varchar(20);
+define v_cedula_cartas		varchar(20);
+define v_nombre_completo 	varchar(30);
+define v_cargo           	varchar(50);
+DEFINE _tipo                CHAR(1);
+define v_fecha_genera       DATETIME HOUR TO SECOND;
+define _cantidad            INTEGER;
+DEFINE _agno                char(4);
+define _ded, _copago		dec(16,2);
+define _coaseguro 			dec(16,2);
+define _ahorro 				DEC(16,2);
+define _prima_individual    DEC(16,2);
+define _prima_result        DEC(16,2);
+define _prima_depen			DEC(16,2);
+define _prima_br			DEC(16,2);
+define _cant_depen,_cnt     integer;
+DEFINE _no_poliza2        	CHAR(10);
+define _tipo_m              CHAR(1);
+define _status              char(1);
+define _cod_tipotran2   	char(3);
+define _codigo_perfil       char(3);
+
+define _ruc_dv          	CHAR(2);
+define _ruc_cedula          varchar(30);
+define _ruc                 char(50);
+DEFINE _fecha_actual	    date;
+DEFINE _cadena_fecha        CHAR(50);
+DEFINE _periodo_fijo        CHAR(100);
+define _pagado_aseg			decimal(16,2);
+define _no_cubierto_ase		decimal(16,2);
+define _inc_prov			decimal(16,2);
+define _cod_tipopago		char(3);
+define _cod_cliente			char(10);
+define _cod_tipotran3       char(3);
+define _cod_asegurado       char(10);
+define _cod_agente  		char(5);
+define _nombre_corredor     varchar(50);
+define _nombre_subramo		varchar(50);
+define _cod_subramo			char(3);
+define _gasto_fact1			dec(16,2);
+define _busca_reclamos      char(10);
+define _cargo               char(3);
+
+SET ISOLATION TO DIRTY READ;
+
+--DROP TABLE tmp_saldo1;
+let _agno = a_ano;
+let _flag = 0;
+let _saber_reclamo = 0;
+let _saber_cobro   = 0;
+let _sindato       = 0;
+let _ded           = 0;
+let _copago        = 0;
+let _coaseguro     = 0;
+let _ahorro        = 0;
+let _prima_individual = 0;
+let _prima_result   = 0;
+let _prima_depen    = 0;
+let _prima_br       = 0;
+let _cant_depen     = 0;
+let _inc_prov 	   = 0;
+let _pagado_aseg 	   = 0;
+let _no_cubierto_ase	   = 0;
+let _gasto_fact1 = 0;
+let _no_reclamo = '';
+let _no_tranrec = '';
+let _cod_tipotran3 = '';
+let _cod_tipopago = '';
+let _cod_tipotran = '';
+let _cod_cliente = ''; 
+let _nombre_subramo = ''; 
+
+CREATE TEMP TABLE tmp_rec1(
+        fecha           	DATE,
+		facturado       	DEC(16,2),
+		pagado		    	DEC(16,2),
+		monto_no_cubierto 	DEC(16,2),
+		no_unidad           CHAR(5),
+		cod_asegurado       CHAR(10),
+		deducible           DEC(16,2) default 0,
+		copago              DEC(16,2) default 0,
+		coaseguro           DEC(16,2) default 0,
+		ahorro              DEC(16,2) default 0,
+		prima_pagada        DEC(16,2) default 0,
+		seleccionado		SMALLINT  default 1,
+		incurrido_prov	    DEC(16,2) default 0,
+		no_cubierto_ase	    DEC(16,2) default 0,
+		pagado_ase			DEC(16,2) default 0,
+		no_reclamo			char(10),
+		no_tranrec			char(10),
+		cod_tipotran		char(3),
+		cod_tipopago		char(3),
+		cod_cliente         char(10)		
+		) WITH NO LOG;   
+
+ let _no_poliza = sp_sis21(a_no_documento);
+
+--set debug file to "sp_atc02aa.trc";
+--trace on;
+
+ SELECT cod_ramo,
+		cod_contratante,
+		cod_subramo
+   INTO _cod_ramo,
+        _cod_pagador,
+		_cod_subramo
+   FROM emipomae
+  WHERE no_poliza = _no_poliza;
+  
+ select nombre
+   into _nombre_subramo
+   from prdsubra
+  where cod_ramo = _cod_ramo
+    and cod_subramo = _cod_subramo;
+  
+ let _monto_no_cubierto = 0.00;
+
+ SELECT nombre, cedula , digito_ver
+   INTO _nombre_pagador,_ruc_cedula,_ruc_dv	  
+   FROM cliclien
+  WHERE cod_cliente = _cod_pagador;  
+  
+  let _ruc = trim(_ruc_cedula)||'-'||trim(_ruc_dv);
+  if _agno = 2019 then
+	let _periodo_fijo = '1 de abril al 31 de diciembre de ' || a_ano;
+  else
+	let _periodo_fijo = '1 de enero al 31 de diciembre de ' || a_ano;
+  end if
+  let _fecha_actual = sp_sis26() ;
+  let _cadena_fecha = sp_cob774(_fecha_actual);   
+
+
+select cod_tipotran
+  into _cod_tipotran2
+  from rectitra
+ where tipo_transaccion = 13;
+
+
+{FOREACH
+
+     SELECT no_unidad
+	   INTO _no_unidad2
+	   FROM emipouni
+	  where no_poliza = _no_poliza
+
+	--determinar la prima individual
+	 foreach
+
+		SELECT COUNT(*)
+		  INTO _cant_depen
+		  FROM emidepen
+		 WHERE no_poliza = _no_poliza
+		   AND no_unidad = _no_unidad2
+
+		IF _cant_depen = 0 THEN
+
+			SELECT prima_bruta
+			  into _prima_individual
+			  FROM emipouni
+			 WHERE no_poliza = _no_poliza
+			   AND no_unidad = _no_unidad2;
+
+			exit foreach;
+
+		end if
+
+	 end foreach
+
+end foreach}
+
+if _prima_individual is null then
+	let _prima_individual = 0;
+end if
+
+ FOREACH WITH HOLD
+     SELECT no_unidad,
+	        cod_asegurado
+	   INTO _no_unidad2,
+	       	_cod_contratante
+	   FROM emipouni
+	  WHERE no_poliza = _no_poliza
+
+	 SELECT nombre,
+			ramo_sis
+	   INTO _nombre_ramo,
+			_ramo_sis
+	   FROM prdramo
+	  WHERE cod_ramo = _cod_ramo;
+
+	 LET _monto_no_cubierto = 0.00;
+	 LET _pago_prov         = 0;
+	 LET _gasto_fact        = 0;
+	 let _ded               = 0;
+	 let _copago            = 0;
+	 let _coaseguro         = 0;
+	 let _ahorro            = 0;
+	 let _inc_prov          = 0;
+	 let _pagado_aseg       = 0;
+	 let _no_cubierto_ase   = 0;
+	 
+    let _busca_reclamos = '%';
+      
+    if a_tipo_rec in (1, 2) then
+        let _busca_reclamos = _cod_contratante;
+    end if      	 
+	 
+	 if _ramo_sis <> 5 then		--si no es salud
+		let _pago_prov  = 0;
+		let _gasto_fact = 0;
+	 else
+		select cod_tipotran
+		  into _cod_tipotran
+		  from rectitra
+		 where tipo_transaccion = 4;
+
+        let _cantidad = 0;
+
+        if a_tipo_rec in (1,3) then
+            select count(*)
+    		  into _cantidad
+    		  from recrcmae
+    		 where no_documento   = a_no_documento
+    		   and actualizado    = 1
+    		   and no_unidad      = _no_unidad2
+               and cod_reclamante like _busca_reclamos;
+        else
+             select count(*)
+    		  into _cantidad
+    		  from recrcmae
+    		 where no_documento   = a_no_documento
+    		   and actualizado    = 1
+    		   and no_unidad      = _no_unidad2
+               and cod_reclamante <> _busca_reclamos;
+       end if
+
+		If _cantidad > 0 Then 
+            if a_tipo_rec in (1,3) then
+				foreach
+				 select	numrecla,
+						fecha_siniestro,
+						no_reclamo,
+						no_unidad,
+						no_poliza,
+						periodo,
+						cod_asegurado
+				   into	_numrecla,
+						_fecha_siniestro,
+						_no_reclamo,
+						_no_unidad,
+						_no_poliza2,
+						_periodo,
+						_cod_asegurado
+				   from recrcmae
+				  where	no_documento   = a_no_documento
+					and actualizado    = 1
+					and no_unidad      = _no_unidad2
+					and cod_reclamante like _busca_reclamos
+
+				   let _fecha_factura = null;
+				   
+					foreach
+						 select fecha,
+								no_tranrec,
+								cod_tipopago,
+								cod_tipotran,
+								cod_cliente,							
+								fecha_factura
+						   into	_fecha_gasto,
+								_no_tranrec,
+								_cod_tipopago,
+								_cod_tipotran3,
+								_cod_cliente,							
+								_fecha_factura
+						   from rectrmae
+						  where no_reclamo   = _no_reclamo
+							and actualizado  = 1
+							and cod_tipotran in ('004','013')
+	--						and pagado       = 1
+	--						and (cod_tipotran = _cod_tipotran
+	--						 or cod_tipotran  = _cod_tipotran2)
+
+						if _fecha_factura is null then
+							let _fecha_factura = _fecha_gasto;
+						end if
+
+						if year(_fecha_factura) <> a_ano then
+							INSERT INTO tmp_rec1(
+							fecha,
+							facturado,
+							pagado,
+							monto_no_cubierto,
+							no_unidad,
+							cod_asegurado,
+							deducible,
+							copago,
+							coaseguro,
+							ahorro,
+							no_reclamo,
+							no_tranrec,
+							cod_tipotran,
+							cod_tipopago,
+							incurrido_prov,
+							pagado_ase,
+							no_cubierto_ase,
+							cod_cliente						
+							)
+							VALUES(
+							date("01/01/"||_agno),
+							0,
+							0,
+							0,
+							_no_unidad2,
+							_cod_contratante,
+							0,
+							0,
+							0,
+							0,
+							_no_reclamo,
+							_no_tranrec,
+							_cod_tipotran3,
+							_cod_tipopago,
+							_inc_prov,
+							_pagado_aseg,
+							_no_cubierto_ase,
+							_cod_cliente						
+							);
+							continue foreach;
+						end if
+
+						 select	sum(facturado),
+    				            sum(monto),
+								sum(monto_no_cubierto),
+								sum(a_deducible),
+								sum(co_pago),
+								sum(coaseguro),
+								sum(ahorro)
+						   into	_gasto_fact,
+						        _pago_prov,
+								_monto_no_cubierto,
+								_ded,
+								_copago,
+								_coaseguro,
+								_ahorro
+						   from rectrcob
+						  where no_tranrec = _no_tranrec;
+						  
+						{   select sum(a.facturado)
+							 into _gasto_fact
+							 from rectrcob a inner join rectrmae b on a.no_tranrec = b.no_tranrec
+							where a.no_tranrec = _no_tranrec
+							  and (cod_tipotran = _cod_tipotran
+							   or cod_tipotran  = _cod_tipotran2);	}	
+
+						if _cod_tipotran = '013' then --Declinar Reclamo
+							let _no_cubierto_ase = _pago_prov + _monto_no_cubierto +  _ded + _copago + _coaseguro + _ahorro;
+						elif _cod_tipotran = '004' and _cod_tipopago = '001' then -- Transacciones de Pago a Proveedor
+							let _inc_prov =  _pago_prov + _ahorro + _monto_no_cubierto;
+							let _no_cubierto_ase = _ded + _copago + _coaseguro;
+						elif _cod_tipotran = '004' and _cod_tipopago = '003' then -- Transacciones de Pago a Asegurado
+							let _pagado_aseg = _pago_prov;
+							let _no_cubierto_ase = _ded + _copago + _coaseguro + _ahorro + _monto_no_cubierto;
+						end if
+							   
+
+						-- En vez de fecha de la transaccion se puso fecha de factura
+						-- Solicitado por Maruquel el 06/02/2007
+						-- Cambiado por Demetrio Hurtado
+						INSERT INTO tmp_rec1(
+						fecha,
+						facturado,
+						pagado,
+						monto_no_cubierto,
+						no_unidad,
+						cod_asegurado,
+						deducible,
+						copago,
+						coaseguro,
+						ahorro,
+						no_reclamo,
+						no_tranrec,
+						cod_tipotran,
+						cod_tipopago,
+						incurrido_prov,
+						pagado_ase,
+						no_cubierto_ase,
+						cod_cliente					
+						)
+						VALUES(
+						_fecha_factura,
+						_gasto_fact,
+						_pago_prov,
+						_monto_no_cubierto,
+						_no_unidad,
+						_cod_contratante,
+						_ded,
+						_copago,
+						_coaseguro,
+						_ahorro,
+						_no_reclamo,
+						_no_tranrec,
+						_cod_tipotran3,
+						_cod_tipopago,
+						_inc_prov,
+						_pagado_aseg,
+						_no_cubierto_ase,
+						_cod_cliente					
+						);
+						-- las variables continuaban con valor anterior..HGIRON 04/02/19
+						let	_gasto_fact        = 0.00;
+						let	_pago_prov	       = 0.00;
+						let	_monto_no_cubierto = 0.00;				
+						let _ded 		       = 0;
+						let _copago 	       = 0;
+						let _coaseguro 	       = 0;
+						let _ahorro 	       = 0;		
+						let _inc_prov        = 0;
+						let _pagado_aseg     = 0;
+						let _no_cubierto_ase        = 0;				
+						
+					end foreach
+
+				{	if _fecha_factura is null then
+						INSERT INTO tmp_rec1(
+						fecha,
+						facturado,
+						pagado,
+						monto_no_cubierto,
+						no_unidad,
+						cod_asegurado,
+						deducible,
+						copago,
+						coaseguro,
+						ahorro,
+						no_reclamo,
+						no_tranrec,
+						cod_tipotran,
+						cod_tipopago,
+						incurrido_prov,
+						pagado_ase,
+						no_cubierto_ase,
+						cod_cliente					
+						)
+						VALUES(
+						date("01/01/"||_agno),
+						0,
+						0,
+						0,
+						_no_unidad2,
+						_cod_contratante,
+						0,
+						0,
+						0,
+						0,
+						_no_reclamo,
+						_no_tranrec,
+						_cod_tipotran3,
+						_cod_tipopago,
+						_inc_prov,
+						_pagado_aseg,
+						_no_cubierto_ase,
+						_cod_cliente					
+						);
+					end if}
+				end foreach
+			else
+				foreach
+				 select	numrecla,
+						fecha_siniestro,
+						no_reclamo,
+						no_unidad,
+						no_poliza,
+						periodo,
+						cod_asegurado
+				   into	_numrecla,
+						_fecha_siniestro,
+						_no_reclamo,
+						_no_unidad,
+						_no_poliza2,
+						_periodo,
+						_cod_asegurado
+				   from recrcmae
+				  where	no_documento   = a_no_documento
+					and actualizado    = 1
+					and no_unidad      = _no_unidad2
+					and cod_reclamante <> _busca_reclamos
+
+				   let _fecha_factura = null;
+				   
+					foreach
+						 select fecha,
+								no_tranrec,
+								cod_tipopago,
+								cod_tipotran,
+								cod_cliente,							
+								fecha_factura
+						   into	_fecha_gasto,
+								_no_tranrec,
+								_cod_tipopago,
+								_cod_tipotran3,
+								_cod_cliente,							
+								_fecha_factura
+						   from rectrmae
+						  where no_reclamo   = _no_reclamo
+							and actualizado  = 1
+							and cod_tipotran in ('004','013')
+	--						and pagado       = 1
+	--						and (cod_tipotran = _cod_tipotran
+	--						 or cod_tipotran  = _cod_tipotran2)
+
+						if _fecha_factura is null then
+							let _fecha_factura = _fecha_gasto;
+						end if
+
+						if year(_fecha_factura) <> a_ano then
+							INSERT INTO tmp_rec1(
+							fecha,
+							facturado,
+							pagado,
+							monto_no_cubierto,
+							no_unidad,
+							cod_asegurado,
+							deducible,
+							copago,
+							coaseguro,
+							ahorro,
+							no_reclamo,
+							no_tranrec,
+							cod_tipotran,
+							cod_tipopago,
+							incurrido_prov,
+							pagado_ase,
+							no_cubierto_ase,
+							cod_cliente						
+							)
+							VALUES(
+							date("01/01/"||_agno),
+							0,
+							0,
+							0,
+							_no_unidad2,
+							_cod_contratante,
+							0,
+							0,
+							0,
+							0,
+							_no_reclamo,
+							_no_tranrec,
+							_cod_tipotran3,
+							_cod_tipopago,
+							_inc_prov,
+							_pagado_aseg,
+							_no_cubierto_ase,
+							_cod_cliente						
+							);
+							continue foreach;
+						end if
+
+						 select	sum(facturado),
+    				            sum(monto),
+								sum(monto_no_cubierto),
+								sum(a_deducible),
+								sum(co_pago),
+								sum(coaseguro),
+								sum(ahorro)
+						   into	_gasto_fact,
+						        _pago_prov,
+								_monto_no_cubierto,
+								_ded,
+								_copago,
+								_coaseguro,
+								_ahorro
+						   from rectrcob
+						  where no_tranrec = _no_tranrec;
+						  
+						{   select sum(a.facturado)
+							 into _gasto_fact
+							 from rectrcob a inner join rectrmae b on a.no_tranrec = b.no_tranrec
+							where a.no_tranrec = _no_tranrec
+							  and (cod_tipotran = _cod_tipotran
+							   or cod_tipotran  = _cod_tipotran2);	}	
+
+						if _cod_tipotran = '013' then --Declinar Reclamo
+							let _no_cubierto_ase = _pago_prov + _monto_no_cubierto +  _ded + _copago + _coaseguro + _ahorro;
+						elif _cod_tipotran = '004' and _cod_tipopago = '001' then -- Transacciones de Pago a Proveedor
+							let _inc_prov =  _pago_prov + _ahorro + _monto_no_cubierto;
+							let _no_cubierto_ase = _ded + _copago + _coaseguro;
+						elif _cod_tipotran = '004' and _cod_tipopago = '003' then -- Transacciones de Pago a Asegurado
+							let _pagado_aseg = _pago_prov;
+							let _no_cubierto_ase = _ded + _copago + _coaseguro + _ahorro + _monto_no_cubierto;
+						end if
+							   
+
+						-- En vez de fecha de la transaccion se puso fecha de factura
+						-- Solicitado por Maruquel el 06/02/2007
+						-- Cambiado por Demetrio Hurtado
+						INSERT INTO tmp_rec1(
+						fecha,
+						facturado,
+						pagado,
+						monto_no_cubierto,
+						no_unidad,
+						cod_asegurado,
+						deducible,
+						copago,
+						coaseguro,
+						ahorro,
+						no_reclamo,
+						no_tranrec,
+						cod_tipotran,
+						cod_tipopago,
+						incurrido_prov,
+						pagado_ase,
+						no_cubierto_ase,
+						cod_cliente					
+						)
+						VALUES(
+						_fecha_factura,
+						_gasto_fact,
+						_pago_prov,
+						_monto_no_cubierto,
+						_no_unidad,
+						_cod_contratante,
+						_ded,
+						_copago,
+						_coaseguro,
+						_ahorro,
+						_no_reclamo,
+						_no_tranrec,
+						_cod_tipotran3,
+						_cod_tipopago,
+						_inc_prov,
+						_pagado_aseg,
+						_no_cubierto_ase,
+						_cod_cliente					
+						);
+						-- las variables continuaban con valor anterior..HGIRON 04/02/19
+						let	_gasto_fact        = 0.00;
+						let	_pago_prov	       = 0.00;
+						let	_monto_no_cubierto = 0.00;				
+						let _ded 		       = 0;
+						let _copago 	       = 0;
+						let _coaseguro 	       = 0;
+						let _ahorro 	       = 0;		
+						let _inc_prov        = 0;
+						let _pagado_aseg     = 0;
+						let _no_cubierto_ase        = 0;				
+						
+					end foreach
+
+					if _fecha_factura is null then
+						INSERT INTO tmp_rec1(
+						fecha,
+						facturado,
+						pagado,
+						monto_no_cubierto,
+						no_unidad,
+						cod_asegurado,
+						deducible,
+						copago,
+						coaseguro,
+						ahorro,
+						no_reclamo,
+						no_tranrec,
+						cod_tipotran,
+						cod_tipopago,
+						incurrido_prov,
+						pagado_ase,
+						no_cubierto_ase,
+						cod_cliente					
+						)
+						VALUES(
+						date("01/01/"||_agno),
+						0,
+						0,
+						0,
+						_no_unidad2,
+						_cod_contratante,
+						0,
+						0,
+						0,
+						0,
+						_no_reclamo,
+						_no_tranrec,
+						_cod_tipotran3,
+						_cod_tipopago,
+						_inc_prov,
+						_pagado_aseg,
+						_no_cubierto_ase,
+						_cod_cliente					
+						);
+					end if
+				end foreach
+			
+			end if
+		else
+			INSERT INTO tmp_rec1(
+			fecha,
+			facturado,
+			pagado,
+			monto_no_cubierto,
+			no_unidad,
+			cod_asegurado,
+			deducible,
+			copago,
+			coaseguro,
+			ahorro,
+			no_reclamo,
+			no_tranrec,
+			cod_tipotran,
+			cod_tipopago,
+			incurrido_prov,
+			pagado_ase,
+			no_cubierto_ase,
+			cod_cliente			
+			)
+			VALUES(
+			date("01/01/"||_agno),
+			_gasto_fact,
+			_pago_prov,
+			_monto_no_cubierto,
+			_no_unidad2,
+			_cod_contratante,
+			_ded,
+			_copago,
+			_coaseguro,
+			_ahorro,
+			_no_reclamo,
+			_no_tranrec,
+			_cod_tipotran3,
+			_cod_tipopago,
+			_inc_prov,
+			_pagado_aseg,
+			_no_cubierto_ase,
+			_cod_cliente			
+		    );
+		end if
+ 	 	 	let _inc_prov = 0;
+			let _pagado_aseg = 0;
+			let _no_cubierto_ase = 0;end if
+ END FOREACH
+
+LET _tipo_m = sp_sis146(a_monto_uni);
+
+IF a_unidad <> "*" THEN
+
+		LET _tipo = sp_sis04(a_unidad);  -- Separa los Valores del String en una tabla de codigos
+
+		IF _tipo <> "E" THEN -- (I) Incluir los Registros
+
+			UPDATE tmp_rec1
+			   SET seleccionado = 0
+			 WHERE seleccionado = 1
+			   AND no_unidad NOT IN (SELECT codigo FROM tmp_codigos);
+
+		ELSE		        -- (E) Excluir estos Registros
+
+			UPDATE tmp_rec1
+			   SET seleccionado = 0
+			 WHERE seleccionado = 1
+			   AND no_unidad IN (SELECT codigo FROM tmp_codigos);
+
+		END IF
+
+		DROP TABLE tmp_codigos;
+
+END IF
+
+LET v_fecha_genera = CURRENT;
+
+let  _cnt = 0;
+
+FOREACH
+	SELECT no_unidad
+	  INTO _no_unidad
+	  FROM tmp_rec1
+	 WHERE year(fecha)  = a_ano
+	   AND seleccionado = 1
+	 GROUP BY no_unidad, cod_asegurado
+
+	LET _cnt = _cnt + 1;
+END FOREACH
+
+let _gasto_fact1 = 0;
+if _cnt > 0 then
+
+	FOREACH	WITH HOLD
+			SELECT sum(facturado),
+				   sum(pagado),
+				   sum(monto_no_cubierto),
+				   sum(deducible),
+				   sum(copago),
+				   sum(coaseguro),
+				   sum(ahorro),
+				   sum(pagado_ase),
+				   sum(no_cubierto_ase),
+				   sum(incurrido_prov),			   
+				   no_unidad,
+				   cod_asegurado			   
+			  INTO _gasto_fact,
+				   _pago_prov,
+				   _monto_no_cubierto,
+				   _ded,
+				   _copago,
+				   _coaseguro,
+				   _ahorro,
+				   _pagado_aseg,
+				   _no_cubierto_ase,
+				   _inc_prov,			   
+				   _no_unidad,
+				   _cod_contratante			   
+			  FROM tmp_rec1
+			 WHERE year(fecha)  = a_ano
+			   and seleccionado = 1
+			 GROUP BY no_unidad, cod_asegurado
+			 
+		{		if _cod_tipotran = '013' and _cod_cliente <> _cod_contratante then --Declinar Reclamo Otros
+					let _inc_prov =  _pago_prov + _ahorro + _monto_no_cubierto + _inc_prov;
+				elif _cod_tipotran = '013' and _cod_cliente = _cod_contratante then --Declinar Reclamo Asegurado
+					let _no_cubierto_ase = _pago_prov + _monto_no_cubierto +  _ded + _copago + _coaseguro + _ahorro + _no_cubierto_ase;					
+				elif _cod_tipotran = '004' and _cod_tipopago = '001' then -- Transacciones de Pago a Proveedor
+					let _inc_prov =  _pago_prov + _ahorro + _monto_no_cubierto + _inc_prov;
+					let _no_cubierto_ase = _ded + _copago + _coaseguro + _no_cubierto_ase;
+				elif _cod_tipotran = '004' and _cod_tipopago = '003' then -- Transacciones de Pago a Asegurado
+					let _pagado_aseg = _pago_prov + _pagado_aseg;
+					let _no_cubierto_ase = _ded + _copago + _coaseguro + _ahorro + _monto_no_cubierto + _no_cubierto_ase;
+				end if
+		}		
+				let _gasto_fact1 = _gasto_fact1 + _gasto_fact;
+	END FOREACH		 
+
+		if _gasto_fact1 IS NULL THEN
+			let _gasto_fact1 = 0.00;
+		end if
+{
+		if _gasto_fact IS NULL THEN
+			let _gasto_fact = 0.00;
+		end if
+}
+
+		if _pago_prov IS NULL THEN
+			let _pago_prov = 0.00;
+		end if
+
+		let _prima_result = 0;
+		let _prima_depen  = 0;
+		let _prima_br     = 0;
+
+        SELECT monto
+		  INTO _prima_depen
+		  FROM tmp_cod_mt
+		 WHERE codigo = _no_unidad;
+
+		{foreach
+
+			select e.prima_bruta
+			  into _prima_br
+			  from endeduni e, endedmae t
+			 where e.no_poliza   = t.no_poliza
+			   and e.no_endoso   = t.no_endoso
+			   and e.no_poliza   = _no_poliza
+			   and e.no_unidad   = _no_unidad
+			   and year(t.vigencia_inic) = a_ano
+			   and t.cod_endomov = "014"
+
+			let _prima_result = _prima_br - _prima_individual;
+			let _prima_depen  = _prima_depen + _prima_result;
+
+		end foreach
+	   }
+		-- Buscando Datos del Asegurado
+
+		 SELECT nombre,
+				cedula,
+				tipo_persona
+		   INTO _nombre_asegurado,
+		        _cedula,
+				_tipo_persona
+		   FROM cliclien
+		  WHERE cod_cliente = _cod_contratante;
+
+		-- Buscando Firma y Cedula de la Carta
+
+		SELECT valor_parametro 
+		  INTO v_firma_cartas
+		  FROM inspaag
+		 WHERE codigo_parametro = "firma_cartas"; 
+		 let v_firma_cartas = 'KCESAR';
+
+		SELECT valor_parametro 
+		  INTO v_cedula_cartas
+		  FROM inspaag
+		 WHERE codigo_parametro = "cedula_cartas"; 
+
+		SELECT descripcion,status
+		  INTO v_nombre_completo,_status
+		  FROM insuser
+		 WHERE usuario = v_firma_cartas;
+
+		 if _status = "A" then
+		 else
+
+			SELECT valor_parametro 
+			  INTO v_firma_cartas
+			  FROM inspaag
+			 WHERE codigo_parametro = "firma_carta2"; 
+			
+			SELECT valor_parametro 
+			  INTO v_cedula_cartas
+			  FROM inspaag
+			 WHERE codigo_parametro = "cedula_carta2";
+
+			SELECT descripcion,
+			       status 
+			  INTO v_nombre_completo,
+			       _status
+			  FROM insuser
+			 WHERE usuario = v_firma_cartas;
+
+		 end if
+
+		SELECT cargo
+		  INTO v_cargo
+		  FROM wf_firmas
+		 WHERE usuario = trim(v_firma_cartas);
+		 
+		 if v_cargo is null then
+		
+			SELECT cia_depto,
+                   cargo			
+			  INTO _codigo_perfil,
+			       _cargo
+			  FROM insuser
+			 WHERE usuario = v_firma_cartas;
+		 
+			select nombre
+			  into v_cargo
+			  from inscargo
+			 where cod_depto = _codigo_perfil
+			   and cod_cargo = _cargo;
+		end if
+
+	    LET v_fecha_genera = v_fecha_genera + 1 UNITS SECOND;
+	foreach
+		select cod_agente
+		  into _cod_agente
+		  from emipoagt
+		 where no_poliza = _no_poliza
+		exit foreach;
+	end foreach
+
+
+    select nombre
+ 	  into _nombre_corredor
+	  from agtagent
+	 where cod_agente = _cod_agente;
+
+	 if _no_unidad is null or _no_unidad = '' then
+		 select min(_no_unidad)
+		 into _no_unidad
+		 from emipouni
+		where no_poliza = _no_poliza;
+		--in (select no_poliza from emipoliza   where	no_documento   = a_no_documento);
+	 end if
+
+	 if  _no_unidad = '' then
+		let _no_unidad = '00001';
+	 end if
+	RETURN a_no_documento,
+		   _nombre_pagador,
+		   trim(_cedula),
+		   trim(_nombre_asegurado),
+		   trim(_nombre_ramo),
+		   _gasto_fact,
+		   _pago_prov,
+		   _tipo_persona,
+		   a_usuario,
+		   a_ano,
+		   trim(v_firma_cartas),
+		   trim(v_cedula_cartas),
+		   trim(v_nombre_completo),
+		   trim(v_cargo),
+		   _monto_no_cubierto,
+		   _no_poliza,
+		   v_fecha_genera,
+		   _ded,
+		   _copago,
+		   _coaseguro,
+		   _ahorro, --				   
+		   _prima_depen,
+		   _cadena_fecha,
+		   trim(_nombre_subramo),
+		   trim(_cedula),
+		   _periodo_fijo,
+		   _no_unidad,
+		   trim(_nombre_corredor),
+		   _pagado_aseg,
+		   _no_cubierto_ase,
+		   _inc_prov				   
+		   WITH RESUME;
+--END FOREACH
+
+else
+	let _gasto_fact1 = 0;
+	FOREACH	WITH HOLD
+
+			SELECT sum(facturado),
+				   sum(pagado),
+				   sum(monto_no_cubierto),
+				   sum(deducible),
+				   sum(copago),
+				   sum(coaseguro),
+				   sum(ahorro),
+					sum(pagado_ase),
+					sum(no_cubierto_ase),
+					sum(incurrido_prov),			   
+				   no_unidad,
+				   cod_asegurado
+			  INTO _gasto_fact,
+				   _pago_prov,
+				   _monto_no_cubierto,
+				   _ded,
+				   _copago,
+				   _coaseguro,
+				   _ahorro,
+				   _pagado_aseg,
+				   _no_cubierto_ase,
+				   _inc_prov,			   
+				   _no_unidad,
+				   _cod_contratante		   
+			  FROM tmp_rec1
+			 WHERE year(fecha)  = a_ano
+			   and seleccionado = 1
+			 GROUP BY no_unidad, cod_asegurado
+			 --  GROUP BY no_unidad,cod_cliente, cod_asegurado, cod_tipotran, cod_tipopago		 
+
+			{	if _cod_tipotran = '013' and _cod_cliente <> _cod_contratante then --Declinar Reclamo Otros
+					let _inc_prov =  _pago_prov + _ahorro + _monto_no_cubierto + _inc_prov;
+				elif _cod_tipotran = '013' and _cod_cliente = _cod_contratante then --Declinar Reclamo Asegurado
+					let _no_cubierto_ase = _pago_prov + _monto_no_cubierto +  _ded + _copago + _coaseguro + _ahorro + _no_cubierto_ase;					
+				elif _cod_tipotran = '004' and _cod_tipopago = '001' then -- Transacciones de Pago a Proveedor
+					let _inc_prov =  _pago_prov + _ahorro + _monto_no_cubierto + _inc_prov;
+					let _no_cubierto_ase = _ded + _copago + _coaseguro + _no_cubierto_ase;
+				elif _cod_tipotran = '004' and _cod_tipopago = '003' then -- Transacciones de Pago a Asegurado
+					let _pagado_aseg = _pago_prov + _pagado_aseg;
+					let _no_cubierto_ase = _ded + _copago + _coaseguro + _ahorro + _monto_no_cubierto + _no_cubierto_ase;
+				end if
+			}	
+				let _gasto_fact1 = _gasto_fact1 + _gasto_fact;
+	END FOREACH
+
+		if _gasto_fact1 IS NULL THEN
+			let _gasto_fact1 = 0.00;
+		end if
+{
+		if _gasto_fact IS NULL THEN
+			let _gasto_fact = 0.00;
+		end if
+}
+
+		if _pago_prov IS NULL THEN
+			let _pago_prov = 0.00;
+		end if
+
+		let _prima_result = 0;
+		let _prima_depen  = 0;
+		let _prima_br     = 0;
+
+        SELECT monto
+		  INTO _prima_depen
+		  FROM tmp_cod_mt
+		 WHERE codigo = _no_unidad;
+
+	   {	foreach
+			select e.prima_bruta
+			  into _prima_br
+			  from endeduni e, endedmae t
+			 where e.no_poliza   = t.no_poliza
+			   and e.no_endoso   = t.no_endoso
+			   and e.no_poliza   = _no_poliza
+			   and e.no_unidad   = _no_unidad
+			   and year(t.vigencia_inic) = a_ano
+			   and t.cod_endomov = "014"
+
+			let _prima_result = _prima_br - _prima_individual;
+			let _prima_depen  = _prima_depen + _prima_result;
+
+		end foreach
+		}
+		-- Buscando Datos del Asegurado
+
+		 SELECT nombre,
+				cedula,
+				tipo_persona
+		   INTO _nombre_asegurado,
+		        _cedula,
+				_tipo_persona
+		   FROM cliclien
+		  WHERE cod_cliente = _cod_contratante;
+
+		-- Buscando Firma y Cedula de la Carta
+
+		SELECT valor_parametro 
+		  INTO v_firma_cartas
+		  FROM inspaag
+		 WHERE codigo_parametro = "firma_cartas"; 
+		 
+        let v_firma_cartas = 'KCESAR';
+		
+		SELECT valor_parametro 
+		  INTO v_cedula_cartas
+		  FROM inspaag
+		 WHERE codigo_parametro = "cedula_cartas"; 
+
+		SELECT descripcion,status 
+		  INTO v_nombre_completo,_status
+		  FROM insuser
+		 WHERE usuario = v_firma_cartas;
+
+		 if _status = "A" then
+		 else
+
+			SELECT valor_parametro 
+			  INTO v_firma_cartas
+			  FROM inspaag
+			 WHERE codigo_parametro = "firma_carta2"; 
+			
+			SELECT valor_parametro 
+			  INTO v_cedula_cartas
+			  FROM inspaag
+			 WHERE codigo_parametro = "cedula_carta2";
+
+			SELECT descripcion,
+			       status 
+			  INTO v_nombre_completo,
+			       _status
+			  FROM insuser
+			 WHERE usuario = v_firma_cartas;
+
+		 end if
+
+		SELECT cargo
+		  INTO v_cargo
+		  FROM wf_firmas
+		 WHERE usuario = trim(v_firma_cartas);
+
+		if v_cargo is null then
+
+			SELECT cia_depto,
+                   cargo			
+			  INTO _codigo_perfil,
+			       _cargo
+			  FROM insuser
+			 WHERE usuario = v_firma_cartas;
+		 
+			select nombre
+			  into v_cargo
+			  from inscargo
+			 where cod_depto = _codigo_perfil
+			   and cod_cargo = _cargo;
+		
+		end if
+
+	    LET v_fecha_genera = v_fecha_genera + 1 UNITS SECOND;
+		
+		foreach
+			select cod_agente
+			  into _cod_agente
+			  from emipoagt
+			 where no_poliza = _no_poliza
+			exit foreach;
+		end foreach
+
+
+    select nombre
+ 	  into _nombre_corredor
+	  from agtagent
+	 where cod_agente = _cod_agente;
+
+	 if _no_unidad is null or _no_unidad = '' then
+		 select min(_no_unidad)
+		 into _no_unidad
+		 from emipouni
+		where no_poliza = _no_poliza;
+		--in (select no_poliza from emipoliza   where	no_documento   = a_no_documento);
+	 end if
+
+	 if  _no_unidad = '' then
+		let _no_unidad = '00001';
+	 end if
+	RETURN a_no_documento,
+		   _nombre_pagador,
+		   trim(_cedula),
+		   trim(_nombre_asegurado),
+		   trim(_nombre_ramo),
+		   0,
+		   0,
+		   _tipo_persona,
+		   a_usuario,
+		   a_ano,
+		   trim(v_firma_cartas),
+		   trim(v_cedula_cartas),
+		   trim(v_nombre_completo),
+		   trim(v_cargo),
+		   0,
+		   _no_poliza,
+		   v_fecha_genera,
+		   0,
+		   0,
+		   0,
+		   0, --				   
+		   _prima_depen,
+           _cadena_fecha,
+		   trim(_nombre_subramo),
+		   trim(_cedula),
+		   _periodo_fijo,
+		   _no_unidad,
+		   trim(_nombre_corredor),
+		   _pagado_aseg,
+		   _no_cubierto_ase,
+		   _inc_prov				   
+		   WITH RESUME;
+
+--END FOREACH
+
+end if
+
+DROP TABLE tmp_rec1;
+DROP TABLE tmp_cod_mt;
+
+END PROCEDURE

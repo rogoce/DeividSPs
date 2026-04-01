@@ -1,0 +1,126 @@
+-- Procedimiento que Determina el Reaseguro para un Cobro
+-- 
+-- Creado    : 02/08/2012 - Autor: Armando Moreno M.
+-- Modificado: 02/08/2012 - Autor: Armando Moreno M.
+
+drop procedure sp_sis171_bk2;
+create procedure "informix".sp_sis171_bk2(a_no_poliza char(10), a_cod_ramo char(3), a_no_cambio smallint)
+returning integer, char(250);
+
+define _no_poliza			char(10);
+define _cod_contrato		char(5);
+define _no_unidad			char(5);
+define _cod_cober_reas		char(3);
+define _cod_ramo			char(3);
+define _porc_partic_prima	dec(9,6); 
+define _porc_partic_suma	dec(9,6); 
+define _no_cambio			smallint;
+define _orden				smallint;
+define _cnt					smallint;
+define _error				integer;
+
+
+set isolation to dirty read;
+
+begin
+	ON EXCEPTION SET _error 
+		RETURN _error, 'Error al Actualizar el Endoso ' || a_no_poliza;         
+	END EXCEPTION           
+
+create temp table tmp_emireaco(
+		no_poliza    		char(10),
+		no_unidad           char(5),
+		no_cambio           smallint,
+		cod_cober_reas      char(3),
+		orden               smallint,
+		cod_contrato        char(5),
+		porc_partic_suma	dec(9,2), 	
+		porc_partic_prima	dec(9,2)
+		) with no log;
+		
+	if a_cod_ramo <> '024' then	
+		select min(no_unidad)
+		  into _no_unidad
+		  from emireaco
+		 where no_poliza = a_no_poliza
+		   and no_cambio = a_no_cambio;
+
+		foreach
+			select cod_contrato,
+				   porc_partic_prima,
+				   orden,
+				   porc_partic_suma,
+				   cod_cober_reas
+			  into _cod_contrato,
+				   _porc_partic_prima,
+				   _orden,
+				   _porc_partic_suma,
+				   _cod_cober_reas
+			  from emireaco
+			 where no_poliza      = a_no_poliza
+			   and no_unidad      = _no_unidad
+			   and no_cambio      = a_no_cambio
+			   
+			insert into tmp_emireaco(
+				no_poliza,    	
+				no_unidad,        
+				no_cambio,        
+				cod_cober_reas,   
+				orden,            
+				cod_contrato,     
+				porc_partic_suma,
+				porc_partic_prima)
+				values(
+				a_no_poliza, 
+				_no_unidad,
+				a_no_cambio,
+				_cod_cober_reas,
+				_orden,
+				_cod_contrato,
+				_porc_partic_suma,
+				_porc_partic_prima
+				);	      
+		end foreach
+	else
+		foreach
+			select cod_contrato,
+				   no_unidad,
+				   porc_partic_prima,
+				   orden,
+				   porc_partic_suma,
+				   cod_cober_reas
+			  into _cod_contrato,
+				   _no_unidad,
+				   _porc_partic_prima,
+				   _orden,
+				   _porc_partic_suma,
+				   _cod_cober_reas
+			  from emireaco
+			 where no_poliza      = a_no_poliza
+			   and no_cambio      = a_no_cambio
+			   
+			insert into tmp_emireaco(
+				no_poliza,    	
+				no_unidad,        
+				no_cambio,        
+				cod_cober_reas,   
+				orden,            
+				cod_contrato,     
+				porc_partic_suma,
+				porc_partic_prima)
+				values(
+				a_no_poliza, 
+				_no_unidad,
+				a_no_cambio,
+				_cod_cober_reas,
+				_orden,
+				_cod_contrato,
+				_porc_partic_suma,
+				_porc_partic_prima
+				);	
+
+		end foreach
+	end if
+	Return 0, "Actualizacion Exitosa ...";
+end 
+end procedure;

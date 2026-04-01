@@ -1,0 +1,412 @@
+-- Procedimiento para los Certificados de Automovil
+-- 
+-- Creado    : 20/10/2000 - Autor: Amado Perez Mendoza 
+-- Modificado: 20/10/2000 - Autor: Amado Perez Mendoza
+--
+-- SIS v.2.0 - DEIVID, S.A.
+
+DROP PROCEDURE sp_pro50;
+--DROP TABLE tmp_arreglo;
+CREATE PROCEDURE "informix".sp_pro50(a_poliza CHAR(10)) 
+			RETURNING   CHAR(100),			 --	v_contratante,
+						CHAR(100),			 --	v_asegurado,  
+	   					CHAR(50),			 --	v_direccion,	
+	   					CHAR(50),			 --	v_dir_cobro,  
+						CHAR(20),			 --	v_dir_postal, 
+						CHAR(10),			 --	v_telefono1,  
+						CHAR(10),			 --	v_telefono2,	
+						CHAR(10),			 --	v_fax,		
+	   					CHAR(50),			 --	v_ramo,		
+	   					CHAR(50),			 --	v_subramo,	
+						DATE,				 --	v_suscripcion,
+						DATE,				 --	v_vigen_ini,  
+						DATE,				 --	v_vigen_fin,	
+						DEC(16,2),			 --	v_suma_aseg,	
+						CHAR(5),			 --	v_unidad,		
+						CHAR(20),			 --	v_poliza,		
+						CHAR(10),			 --	v_factura,	
+						DEC(16,2),			 --	v_prima,		
+						DEC(16,2),			 --	v_descuento,	
+						DEC(16,2),			 --	v_recargo,	
+						DEC(16,2),			 --	v_prima_neta, 
+						DEC(16,2),			 --	v_impuesto,	
+						DEC(16,2),			 --	v_prima_bruta,
+						CHAR(30),			 --	v_motor,      
+						INT,				 --	v_ano_auto, 
+						CHAR(50),			 --	v_marca,		
+						CHAR(50),			 --	v_modelo,
+						CHAR(10),			 --	v_placa,
+						CHAR(50),			 --	v_tipo,
+						DATE,				 --	v_vig_ini_pol,
+						DATE,				 --	v_vig_fin_pol,
+						CHAR(30);	   		 --	v_cedula
+  --						CHAR(30),			 --	v_chasis,     
+  --						CHAR(10),			 --	v_tipo_factura,
+  --						CHAR(50),			 --	v_desc_factura,
+  --						CHAR(30),			 --	v_fecha_letra,
+											 
+DEFINE v_contratante   CHAR(100);			 
+DEFINE v_asegurado     CHAR(100);			 
+DEFINE v_direccion	   CHAR(50);
+DEFINE v_dir_cobro     CHAR(50);
+DEFINE v_dir_postal    CHAR(20);
+DEFINE v_telefono1     CHAR(10);
+DEFINE v_telefono2	   CHAR(10);
+DEFINE v_fax		   CHAR(10);
+DEFINE v_ramo		   CHAR(50);
+DEFINE v_subramo	   CHAR(50);
+DEFINE v_suscripcion   DATE;
+DEFINE v_vigen_ini     DATE;
+DEFINE v_vigen_fin	   DATE;
+DEFINE v_suma_aseg	   DEC(16,2);
+DEFINE v_unidad		   CHAR(5);
+DEFINE v_poliza		   CHAR(20);
+DEFINE v_factura	   CHAR(10);
+DEFINE v_prima		   DEC(16,2);
+DEFINE v_descuento	   DEC(16,2);
+DEFINE v_recargo	   DEC(16,2);
+DEFINE v_prima_neta    DEC(16,2);
+DEFINE v_impuesto	   DEC(16,2);
+DEFINE v_prima_bruta   DEC(16,2);
+DEFINE v_motor         CHAR(30);
+DEFINE v_chasis        CHAR(30);
+DEFINE v_ano_auto      INT;
+DEFINE v_marca		   CHAR(50);
+DEFINE v_modelo        CHAR(50);
+DEFINE v_placa         CHAR(10);
+DEFINE v_tipo          CHAR(50);
+DEFINE v_vig_ini_pol   DATE;
+DEFINE v_vig_fin_pol   DATE;
+DEFINE v_tipo_factura  CHAR(10);
+DEFINE v_desc_factura  CHAR(50); 
+DEFINE v_descripcion   CHAR(100);
+DEFINE v_fecha_letra   CHAR(30);
+DEFINE v_dia           CHAR(2);
+DEFINE v_ano           CHAR(4);
+DEFINE v_cedula        CHAR(30);
+
+
+DEFINE _no_poliza        CHAR(10);
+DEFINE _cod_cliente	     CHAR(10);
+DEFINE _cod_contratante  CHAR(10);
+DEFINE _cod_marca        CHAR(5);
+DEFINE _cod_modelo       CHAR(5);
+DEFINE _cod_ramo         CHAR(3);
+DEFINE _cod_subramo      CHAR(3);
+DEFINE _cod_tipoauto     CHAR(3);
+DEFINE _nueva_renov      CHAR(1);
+--DEFINE _cod_endomov      CHAR(3);
+DEFINE _dia              CHAR(2);
+DEFINE _ano              CHAR(4);
+
+-- Crear la tabla
+
+CREATE TEMP TABLE tmp_arreglo(
+		no_poliza        CHAR(10),    
+		cod_cliente	     CHAR(10),  
+		vigen_ini        DATE,
+		vigen_final      DATE,
+		no_unidad        CHAR(5),
+		suma_aseg		 DEC(16,2),
+		prima			 DEC(16,2),
+		descuento		 DEC(16,2),
+		recargo		  	 DEC(16,2),
+		prima_neta 	  	 DEC(16,2),
+		impuesto		 DEC(16,2),
+		prima_bruta	  	 DEC(16,2)
+		) WITH NO LOG;   
+
+FOREACH	
+
+-- Lectura de emipouni
+
+ SELECT cod_asegurado,	
+        no_poliza,
+		vigencia_inic,   
+		vigencia_final, 
+		no_unidad,   
+		suma_asegurada,	
+		prima,		
+		descuento,	
+		recargo,		
+		prima_neta, 	
+		impuesto,	
+		prima_bruta	
+   INTO _cod_cliente,
+		_no_poliza,
+		v_vigen_ini,
+		v_vigen_fin,
+		v_unidad,
+		v_suma_aseg,
+		v_prima,
+		v_descuento,
+		v_recargo,
+		v_prima_neta,
+		v_impuesto,
+		v_prima_bruta
+   FROM emipouni
+  WHERE no_poliza = a_poliza
+ 			   
+	INSERT INTO tmp_arreglo(
+	no_poliza,    
+	cod_cliente,	
+	vigen_ini,   
+	vigen_final,    
+	no_unidad,    
+	suma_aseg,	 
+	prima,		 
+	descuento,	 
+	recargo,		
+	prima_neta, 	
+	impuesto,	
+	prima_bruta	
+	)
+	VALUES(
+	_no_poliza,
+	_cod_cliente,
+	v_vigen_ini,
+	v_vigen_fin,  
+	v_unidad,
+	v_suma_aseg,
+	v_prima,
+	v_descuento,
+	v_recargo,
+	v_prima_neta,
+	v_impuesto,
+	v_prima_bruta
+	);
+
+END FOREACH;
+
+
+
+--Recorre la tabla temporal y asigna valores a variables de salida
+FOREACH WITH HOLD
+ SELECT no_poliza,  
+		cod_cliente,
+		vigen_ini,  
+		vigen_final,
+		no_unidad,  
+		suma_aseg,	
+        prima,		
+ 		descuento,	    
+ 		recargo,	   
+ 		prima_neta, 
+ 		impuesto,	
+ 		prima_bruta	   
+   INTO _no_poliza,
+        _cod_cliente,
+		v_vigen_ini,
+		v_vigen_fin,  
+		v_unidad,
+		v_suma_aseg,
+		v_prima,
+		v_descuento,
+		v_recargo,
+		v_prima_neta,
+		v_impuesto,
+		v_prima_bruta
+   FROM tmp_arreglo
+
+	-- Lectura de Emipomae
+
+	SELECT no_factura,
+	       no_documento,
+		   fecha_suscripcion
+	  INTO v_factura,
+		   v_poliza,	
+		   v_suscripcion
+	  FROM emipomae
+	 WHERE no_poliza = _no_poliza;
+--		   cod_endomov
+--		   _cod_endomov
+
+	-- Lectura del Asegurado
+
+	SELECT nombre,
+	       cedula,
+		   direccion_1,
+		   direccion_2,
+		   telefono1,
+		   telefono2,
+		   fax,
+		   apartado
+	  INTO v_asegurado,
+	       v_cedula,
+	       v_direccion,
+		   v_dir_cobro,
+		   v_telefono1,
+		   v_telefono2,
+		   v_fax,
+		   v_dir_postal
+	  FROM cliclien
+	 WHERE cod_cliente = _cod_cliente;
+
+	-- Lectura del contratante
+
+	SELECT cod_contratante,
+	       vigencia_inic,
+		   vigencia_final,
+		   nueva_renov
+	  INTO _cod_contratante,
+	       v_vig_ini_pol,
+		   v_vig_fin_pol,
+		   _nueva_renov
+	  FROM emipomae
+	 WHERE no_poliza = _no_poliza;
+
+	SELECT nombre
+	  INTO v_contratante
+	  FROM cliclien
+	 WHERE cod_cliente = _cod_contratante;
+
+    -- Lectura Marca, modelo y tipo de auto
+
+    SELECT no_motor
+	  INTO v_motor
+	  FROM emiauto
+	 WHERE no_poliza = _no_poliza
+	   AND no_unidad = v_unidad;
+--	   AND no_endoso = a_endoso
+--	       no_chasis
+--	       v_chasis
+
+    SELECT cod_marca,
+	       cod_modelo,
+		   placa,
+		   ano_auto
+	  INTO _cod_marca,
+	       _cod_modelo,
+		   v_placa,
+		   v_ano_auto
+	  FROM emivehic
+	 WHERE no_motor = v_motor;
+
+    SELECT nombre
+	  INTO v_marca
+	  FROM emimarca
+	 WHERE cod_marca = _cod_marca;
+
+    SELECT nombre,
+	       cod_tipoauto
+	  INTO v_modelo,
+	       _cod_tipoauto
+	  FROM emimodel
+	 WHERE cod_marca = _cod_marca
+	   AND cod_modelo = _cod_modelo;
+
+    SELECT nombre
+	  INTO v_tipo
+	  FROM emitiaut
+	 WHERE cod_tipoauto = _cod_tipoauto;
+
+    -- Lectura del Ramo y Subramo
+
+    SELECT cod_ramo,
+	       cod_subramo
+	  INTO _cod_ramo,
+	       _cod_subramo
+	  FROM emipomae
+     WHERE no_poliza = _no_poliza;
+
+    SELECT nombre
+	  INTO v_ramo
+	  FROM prdramo
+	 WHERE cod_ramo = _cod_ramo;
+	 
+	SELECT nombre
+	  INTO v_subramo
+	  FROM prdsubra
+	 WHERE cod_ramo = _cod_ramo
+	   AND cod_subramo = _cod_subramo;
+
+   -- Busca el tipo de factura
+
+  { IF TRIM(a_endoso) = '0' THEN
+      IF _nueva_renov = 'N' THEN
+	    LET v_tipo_factura = 'NUEVA';
+	  ELSE
+	    LET v_tipo_factura = 'RENOVAR';
+	  END IF;
+   ELSE
+      LET v_tipo_factura = 'ENDOSO';
+   END IF;
+
+   SELECT nombre 
+     INTO v_desc_factura
+	 FROM endtimov
+    WHERE cod_endomov = _cod_endomov;
+
+   LET v_descripcion = "";  
+
+   IF MONTH(v_suscripcion) = 1 THEN
+      LET v_fecha_letra = 'enero';
+   ELIF MONTH(v_suscripcion) = 2 THEN
+      LET v_fecha_letra = 'febrero';
+   ELIF MONTH(v_suscripcion) = 3 THEN
+      LET v_fecha_letra = 'marzo';
+   ELIF MONTH(v_suscripcion) = 4 THEN
+      LET v_fecha_letra = 'abril';
+   ELIF MONTH(v_suscripcion) = 5 THEN
+      LET v_fecha_letra = 'mayo';
+   ELIF MONTH(v_suscripcion) = 6 THEN
+      LET v_fecha_letra = 'junio';
+   ELIF MONTH(v_suscripcion) = 7 THEN
+      LET v_fecha_letra = 'julio';
+   ELIF MONTH(v_suscripcion) = 8 THEN
+      LET v_fecha_letra = 'agosto';
+   ELIF MONTH(v_suscripcion) = 9 THEN
+      LET v_fecha_letra = 'septiembre';
+   ELIF MONTH(v_suscripcion) = 10 THEN
+      LET v_fecha_letra = 'octubre';
+   ELIF MONTH(v_suscripcion) = 11 THEN
+      LET v_fecha_letra = 'noviembre';
+   ELIF MONTH(v_suscripcion) = 12 THEN
+      LET v_fecha_letra = 'diciembre';
+   END IF
+   
+   LET v_dia = DAY(v_suscripcion);
+   LET v_ano = YEAR(v_suscripcion);
+   LET v_fecha_letra = TRIM(v_dia)||' de '||TRIM(v_fecha_letra)||' de '||TRIM(v_ano);}
+
+	RETURN v_contratante,
+		   v_asegurado,  
+		   v_direccion,	
+		   v_dir_cobro,  
+		   v_dir_postal, 
+		   v_telefono1,  
+		   v_telefono2,	
+		   v_fax,		
+		   v_ramo,		
+		   v_subramo,	
+		   v_suscripcion,
+		   v_vigen_ini,  
+		   v_vigen_fin,	
+		   v_suma_aseg,	
+		   v_unidad,		
+		   v_poliza,		
+		   v_factura,	
+		   v_prima,		
+		   v_descuento,	
+		   v_recargo,	
+		   v_prima_neta, 
+		   v_impuesto,	
+		   v_prima_bruta,
+		   v_motor,      
+		   v_ano_auto, 
+		   v_marca,		
+	 	   v_modelo,
+		   v_placa,
+		   v_tipo,
+	 	   v_vig_ini_pol,
+	 	   v_vig_fin_pol,
+		   v_cedula
+		   WITH RESUME;   	
+{		   v_chasis,     
+	 	   v_tipo_factura,
+		   v_desc_factura,
+	 	   v_fecha_letra,}
+
+END FOREACH
+DROP TABLE tmp_arreglo;
+END PROCEDURE
